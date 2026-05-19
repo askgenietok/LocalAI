@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"slices"
 	"sync"
@@ -78,6 +80,16 @@ func (w *bodyWriter) Flush() {
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+// Hijack lets WebSocket upgraders (gorilla/websocket) reach the
+// underlying connection. Without this, gorilla's Hijacker type-assertion
+// fails on the wrapped writer and the handshake returns 500.
+func (w *bodyWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 func initializeTracing(maxItems int) {

@@ -156,6 +156,10 @@ type RunCMD struct {
 	AutoApproveNodes  bool   `env:"LOCALAI_AUTO_APPROVE_NODES" default:"false" help:"Auto-approve new worker nodes (skip admin approval)" group:"distributed"`
 
 	Version bool
+
+	// Cloud-proxy MITM listener (off by default).
+	MITMListen string `env:"LOCALAI_MITM_LISTEN" help:"Address (host:port) for the cloudproxy MITM listener. Empty = disabled. Clients set HTTPS_PROXY=http://<this>:<port>. Intercept hosts are declared per-model via the model YAML mitm.hosts: block; create one from the Add Model UI." group:"middleware"`
+	MITMCADir  string `env:"LOCALAI_MITM_CA_DIR" type:"path" help:"Directory holding the MITM proxy CA cert + key. Defaults to <data-path>/mitm-ca." group:"middleware"`
 }
 
 func (r *RunCMD) Run(ctx *cliContext.Context) error {
@@ -214,6 +218,8 @@ func (r *RunCMD) Run(ctx *cliContext.Context) error {
 		config.WithLoadToMemory(r.LoadToMemory),
 		config.WithMachineTag(r.MachineTag),
 		config.WithAPIAddress(r.Address),
+		config.WithMITMListen(r.MITMListen),
+		config.WithMITMCADir(r.MITMCADir),
 		config.WithAgentJobRetentionDays(r.AgentJobRetentionDays),
 		config.WithLlamaCPPTunnelCallback(func(tunnels []string) {
 			tunnelEnvVar := strings.Join(tunnels, ",")

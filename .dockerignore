@@ -4,6 +4,7 @@
 .devcontainer
 models
 backends
+volumes
 examples/chatbot-ui/models
 backend/go/image/stablediffusion-ggml/build/
 backend/go/*/build

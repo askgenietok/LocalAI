@@ -95,8 +95,326 @@ type ModelConfig struct {
 	Options   []string `yaml:"options,omitempty" json:"options,omitempty"`
 	Overrides []string `yaml:"overrides,omitempty" json:"overrides,omitempty"`
 
-	MCP   MCPConfig   `yaml:"mcp,omitempty" json:"mcp,omitempty"`
-	Agent AgentConfig `yaml:"agent,omitempty" json:"agent,omitempty"`
+	MCP    MCPConfig       `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	Agent  AgentConfig     `yaml:"agent,omitempty" json:"agent,omitempty"`
+	PII    PIIConfig       `yaml:"pii,omitempty" json:"pii,omitempty"`
+	Router RouterConfig    `yaml:"router,omitempty" json:"router,omitempty"`
+	Proxy  ProxyConfig     `yaml:"proxy,omitempty" json:"proxy,omitempty"`
+	MITM   MITMModelConfig `yaml:"mitm,omitempty" json:"mitm,omitempty"`
+	Limits LimitsConfig    `yaml:"limits,omitempty" json:"limits,omitempty"`
+}
+
+// @Description Admission-control limits applied per request. The
+// admission middleware enforces these before invoking the handler;
+// requests that exceed a limit get 503 with a Retry-After hint so
+// clients back off rather than pile on. Per-model so cloud passthroughs
+// can have a stricter ceiling than local models.
+type LimitsConfig struct {
+	// MaxConcurrent caps simultaneous in-flight requests for this
+	// model. 0 = unlimited (default). Useful for cloud-passthrough
+	// configs where the upstream rate-limits aggressively, or for
+	// local backends whose memory budget tops out before LocalAI's
+	// queue depth would.
+	MaxConcurrent int `yaml:"max_concurrent,omitempty" json:"max_concurrent,omitempty"`
+
+	// RetryAfterSeconds advises clients how long to wait before
+	// retrying when admission rejects. 0 defaults to 1s — enough to
+	// let an in-flight request finish on a busy local model. The
+	// value is sent verbatim in the Retry-After response header.
+	RetryAfterSeconds int `yaml:"retry_after_seconds,omitempty" json:"retry_after_seconds,omitempty"`
+}
+
+// @Description MITM intercept binding for the model. When the cloudproxy
+// MITM listener is enabled and any host listed here appears in a CONNECT,
+// the proxy uses THIS model config's pii: settings to filter the
+// intercepted body. Strict 1-to-1: a host claimed by two configs is a
+// configuration error and disables the MITM listener until resolved.
+//
+// Lets an admin pair a host (api.anthropic.com) with the model's
+// PII overrides without maintaining a parallel per-host map.
+type MITMModelConfig struct {
+	// Hosts is the list of hostnames this model claims for MITM
+	// interception. Each entry must be unique across all model configs.
+	Hosts []string `yaml:"hosts,omitempty" json:"hosts,omitempty"`
+}
+
+// @Description Cloud proxy configuration. The cloud-proxy backend
+// forwards a model's traffic to an external provider. Two modes:
+//
+//   - mode: passthrough — client and upstream must speak the same wire
+//     format; the backend ships the raw request body to the upstream
+//     URL and streams the response back untouched. The streaming PII
+//     filter still runs because it operates on extracted token text.
+//
+//   - mode: translate — the backend converts LocalAI's internal proto
+//     to the provider's wire format and back. Unlocks cross-provider
+//     routing (OpenAI client → Anthropic upstream, etc.) at the cost
+//     of dropping provider-specific extensions that the internal proto
+//     doesn't model.
+type ProxyConfig struct {
+	// UpstreamURL is the full POST endpoint, e.g.
+	// https://api.openai.com/v1/chat/completions or
+	// https://api.anthropic.com/v1/messages. Required.
+	UpstreamURL string `yaml:"upstream_url,omitempty" json:"upstream_url,omitempty"`
+
+	// Mode selects passthrough (wire-perfect) or translate (full
+	// control via internal proto). Empty defaults to passthrough.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+
+	// Provider identifies the upstream's wire format for translate
+	// mode (openai, anthropic). Ignored in passthrough mode — the
+	// wire format there is whatever the client sent.
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	// APIKeyEnv names the environment variable holding the upstream
+	// API key. Mutually exclusive with APIKeyFile. Both empty is
+	// allowed (no-auth upstreams).
+	APIKeyEnv string `yaml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
+
+	// APIKeyFile is a path to a file whose contents are the upstream
+	// API key. Trailing whitespace is trimmed. Mutually exclusive
+	// with APIKeyEnv. The integration point for K8s secret mounts,
+	// Vault agent files, and similar external-secret workflows.
+	APIKeyFile string `yaml:"api_key_file,omitempty" json:"api_key_file,omitempty"`
+
+	// UpstreamModel overrides the model name sent to the upstream.
+	// Useful when the LocalAI-facing model alias differs from the
+	// upstream's canonical name (e.g. local "claude-strict" maps to
+	// upstream "claude-3-5-sonnet-20241022"). Empty means forward
+	// the client's model field unchanged.
+	UpstreamModel string `yaml:"upstream_model,omitempty" json:"upstream_model,omitempty"`
+
+	// RequestTimeoutSeconds caps the upstream request duration. 0
+	// means no per-request timeout (only the request context, which
+	// is bound to the client connection, applies).
+	RequestTimeoutSeconds int `yaml:"request_timeout_seconds,omitempty" json:"request_timeout_seconds,omitempty"`
+}
+
+// Proxy mode names. Validate() normalises an empty Mode to
+// ProxyModePassthrough so downstream code only sees concrete values.
+const (
+	ProxyModePassthrough = "passthrough"
+	ProxyModeTranslate   = "translate"
+)
+
+// Proxy provider names. Only meaningful in translate mode, where the
+// cloud-proxy backend picks the wire format to use against the
+// upstream URL.
+const (
+	ProxyProviderOpenAI    = "openai"
+	ProxyProviderAnthropic = "anthropic"
+)
+
+// ResolveAPIKey reads the upstream API key from whichever source is
+// configured (env var or file). Returns "" with no error when neither
+// is set (no-auth upstreams). File contents are trimmed of leading
+// and trailing whitespace; a stray newline at the end of the file
+// would otherwise produce a malformed Authorization header.
+func (p ProxyConfig) ResolveAPIKey() (string, error) {
+	if p.APIKeyEnv != "" {
+		v := os.Getenv(p.APIKeyEnv)
+		if v == "" {
+			return "", fmt.Errorf("proxy: api_key_env %q is unset", p.APIKeyEnv)
+		}
+		return v, nil
+	}
+	if p.APIKeyFile != "" {
+		b, err := os.ReadFile(p.APIKeyFile)
+		if err != nil {
+			return "", fmt.Errorf("proxy: read api_key_file %q: %w", p.APIKeyFile, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return "", nil
+}
+
+// IsCloudProxyBackendPassthrough reports whether this model uses the
+// cloud-proxy gRPC backend in passthrough mode. Empty Mode counts as
+// passthrough (SetDefaults normalises it, but Validate accepts empty
+// too — handlers should not rely on a particular call order).
+func (c *ModelConfig) IsCloudProxyBackendPassthrough() bool {
+	if c.Backend != "cloud-proxy" {
+		return false
+	}
+	return c.Proxy.Mode == "" || c.Proxy.Mode == ProxyModePassthrough
+}
+
+// @Description Intelligent routing configuration. When a model declares
+// a Router block, requests addressed to it are reclassified at runtime
+// and dispatched to one of the named candidates. The router rewrites
+// input.Model in-place, then the standard model-resolution path picks
+// up the resolved config — meaning ACL checks, disabled-state, and
+// per-model PII still run against the chosen target.
+//
+// Depth-1 invariant: candidates must NOT themselves carry a Router
+// block. The router's "smart-router → claude-strict → cloud-proxy"
+// chain is fine, but "router-A → router-B → claude" is rejected at
+// config load to keep the dispatch graph acyclic and predictable. The
+// middleware also asserts depth ≤ 1 at runtime as a defensive check.
+type RouterConfig struct {
+	// Classifier picks the implementation. Only "score" ships today:
+	// it asks the classifier model to score every Policy label as a
+	// continuation of the routing prompt and reads off the
+	// distribution. Empty defaults to "score".
+	Classifier string `yaml:"classifier,omitempty" json:"classifier,omitempty"`
+
+	// Policies is the label vocabulary the classifier scores over.
+	// Each policy carries a natural-language description that ends up
+	// in the system prompt the classifier model sees — short, action-
+	// oriented sentences work best ("writing or debugging code",
+	// "small talk", ...). The Score classifier picks the subset of
+	// labels whose softmax probability passes ActivationThreshold.
+	Policies []RouterPolicy `yaml:"policies,omitempty" json:"policies,omitempty"`
+
+	// Candidates is the routing table — each entry binds a downstream
+	// model to a set of labels it can serve. The middleware picks the
+	// FIRST candidate whose Labels are a superset of the active label
+	// set from the classifier. Admins order this list smallest →
+	// largest so a query that needs one label routes to the smallest
+	// capable model, while a query that needs multiple falls to a
+	// bigger candidate that covers them all.
+	Candidates []RouterCandidate `yaml:"candidates,omitempty" json:"candidates,omitempty"`
+
+	// Fallback is the model used when no candidate matches the active
+	// label set, or when the classifier returns nothing above
+	// threshold. Empty fallback means router failures bubble up as
+	// 500 — fail-fast, not silent-bypass.
+	Fallback string `yaml:"fallback,omitempty" json:"fallback,omitempty"`
+
+	// ClassifierModel names the model the Score classifier scores
+	// against (Arch-Router-1.5B is the canonical choice).
+	ClassifierModel string `yaml:"classifier_model,omitempty" json:"classifier_model,omitempty"`
+
+	// ClassifierCacheSize bounds the per-prompt memo cache that
+	// amortises the classifier round-trip across repeat probes.
+	// 0 disables the cache. Default 1024.
+	ClassifierCacheSize int `yaml:"classifier_cache_size,omitempty" json:"classifier_cache_size,omitempty"`
+
+	// ActivationThreshold is the softmax-probability floor a policy
+	// must clear to be considered "active" for the request. 0
+	// defaults to a sensible value (~0.15) inside the classifier.
+	// Higher → narrower routes (single-label dominant); lower →
+	// more multi-label activations.
+	ActivationThreshold float64 `yaml:"activation_threshold,omitempty" json:"activation_threshold,omitempty"`
+
+	// EmbeddingCache configures the L2 cache that maps prompt
+	// embeddings to past decisions, so semantically-similar prompts
+	// reuse a classification instead of re-running the classifier
+	// model. Omit the block to disable. See router/embedding_cache.go.
+	EmbeddingCache *EmbeddingCacheConfig `yaml:"embedding_cache,omitempty" json:"embedding_cache,omitempty"`
+}
+
+// EmbeddingCacheConfig configures the L2 embedding-similarity decision
+// cache. Pairs naturally with a larger / slower classifier model: the
+// classifier round-trip is amortised across paraphrases of the same
+// intent. The cache uses the standard /v1/embeddings backend for
+// vector generation and the local-store gRPC surface for KNN search.
+type EmbeddingCacheConfig struct {
+	// EmbeddingModel names the loaded LocalAI model used to embed
+	// router prompts. Required when the cache is enabled. Any model
+	// that supports the Embeddings gRPC primitive works;
+	// nomic-embed-text-v1.5 is the recommended default.
+	EmbeddingModel string `yaml:"embedding_model" json:"embedding_model"`
+
+	// SimilarityThreshold is the cosine-similarity floor a cache
+	// candidate must clear to be treated as a hit. 0 picks the
+	// package default (0.80). Higher → fewer false hits, higher miss
+	// rate; lower → more aggressive sharing across paraphrases.
+	SimilarityThreshold float64 `yaml:"similarity_threshold,omitempty" json:"similarity_threshold,omitempty"`
+
+	// ConfidenceThreshold is the minimum classifier top-label
+	// probability for a decision to be inserted into the cache. 0
+	// picks the package default (0.60). Uncertain decisions are not
+	// cached so they can't poison future paraphrases.
+	ConfidenceThreshold float64 `yaml:"confidence_threshold,omitempty" json:"confidence_threshold,omitempty"`
+
+	// StoreName overrides the local-store collection name used for
+	// this router's cache. Empty defaults to "router-cache-<router>"
+	// where <router> is the parent model name. Useful when two
+	// router models should share a cache (rare).
+	StoreName string `yaml:"store_name,omitempty" json:"store_name,omitempty"`
+}
+
+// RouterPolicy is one entry in the label vocabulary. The label string
+// is what the classifier model emits and what candidates reference in
+// their Labels field; the description is the natural-language hint
+// fed to the classifier so it can match user intent against the label
+// space.
+type RouterPolicy struct {
+	Label       string `yaml:"label" json:"label"`
+	Description string `yaml:"description" json:"description"`
+}
+
+// RouterCandidate names a downstream model and the policy labels it
+// is willing to serve. Labels are matched as a set: the middleware
+// picks the first candidate whose Labels is a superset of the
+// classifier's active set.
+type RouterCandidate struct {
+	Model  string   `yaml:"model" json:"model"`
+	Labels []string `yaml:"labels" json:"labels"`
+}
+
+// HasRouter returns true when the model declares a router config with
+// at least one candidate. Used by the RouteModel middleware to decide
+// whether to engage the classifier.
+func (c *ModelConfig) HasRouter() bool {
+	return len(c.Router.Candidates) > 0
+}
+
+// @Description PII filtering configuration. PII redaction is per-model so
+// that local models don't pay the latency or behaviour change of regex
+// scanning, while cloud-bound traffic (cloud-proxy backend) can default to
+// on. Setting Enabled explicitly always wins over the backend default.
+type PIIConfig struct {
+	// Enabled toggles redaction for this model. When unset (zero value),
+	// the resolved default depends on Backend: cloud-proxy defaults to
+	// true, everything else to false. A pointer is used so the absence of
+	// the YAML key is distinguishable from explicit false.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+
+	// Patterns lets a model upgrade or downgrade individual pattern
+	// actions (mask | block | route_local) relative to the global
+	// defaults loaded from --pii-config / DefaultPatterns. Pattern IDs
+	// not listed inherit the global action. The regex itself stays
+	// global — only the action is settable per-model.
+	Patterns []PIIPatternOverride `yaml:"patterns,omitempty" json:"patterns,omitempty"`
+}
+
+// @Description Per-model action override for a single PII pattern.
+type PIIPatternOverride struct {
+	ID     string `yaml:"id" json:"id"`
+	Action string `yaml:"action" json:"action"`
+}
+
+// PIIIsEnabled returns the resolved PII state for this model. Single
+// source of truth for the gating decision so the middleware and the
+// /api/middleware/status admin view agree.
+func (c *ModelConfig) PIIIsEnabled() bool {
+	if c.PII.Enabled != nil {
+		return *c.PII.Enabled
+	}
+	return c.Backend == "cloud-proxy"
+}
+
+// PIIPatternOverrides returns the per-pattern action overrides as a map
+// keyed by pattern ID. The values are the raw action strings — the pii
+// package validates and converts them.
+//
+// Returned via the documented modelPIIConfig interface in
+// core/services/routing/pii/middleware.go without taking a config
+// dependency on this package.
+func (c *ModelConfig) PIIPatternOverrides() map[string]string {
+	if len(c.PII.Patterns) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(c.PII.Patterns))
+	for _, p := range c.PII.Patterns {
+		if p.ID == "" {
+			continue
+		}
+		out[p.ID] = p.Action
+	}
+	return out
 }
 
 // @Description MCP configuration
@@ -401,6 +719,14 @@ func (cfg *ModelConfig) SetDefaults(opts ...ConfigLoaderOption) {
 	f16 := lo.f16
 	debug := lo.debug
 
+	// Cloud-proxy: normalise empty Mode so downstream consumers
+	// switch on two concrete values only. Validate accepts empty too,
+	// but SetDefaults is the chokepoint that runs before any
+	// inference path reads cfg.Proxy.Mode.
+	if cfg.Proxy.Mode == "" {
+		cfg.Proxy.Mode = ProxyModePassthrough
+	}
+
 	// Apply model-family-specific inference defaults before generic fallbacks.
 	// This ensures gallery-installed and runtime-loaded models get optimal parameters.
 	ApplyInferenceDefaults(cfg, cfg.Name, cfg.Model)
@@ -566,6 +892,39 @@ func (c *ModelConfig) Validate() (bool, error) {
 		}
 	}
 
+	// Cloud-proxy: at most one of api_key_env / api_key_file may be
+	// set. Both empty means no Authorization header (no-auth upstream
+	// or a development passthrough). The mode field accepts the empty
+	// string (defaults to passthrough), "passthrough", or "translate".
+	if c.Proxy.APIKeyEnv != "" && c.Proxy.APIKeyFile != "" {
+		return false, fmt.Errorf("proxy: api_key_env and api_key_file are mutually exclusive")
+	}
+	switch c.Proxy.Mode {
+	case "", ProxyModePassthrough, ProxyModeTranslate:
+		// Empty is accepted at validate-time and normalised to
+		// passthrough by SetDefaults so it never reaches runtime.
+	default:
+		return false, fmt.Errorf("proxy: unknown mode %q (expected %s or %s)",
+			c.Proxy.Mode, ProxyModePassthrough, ProxyModeTranslate)
+	}
+	if c.Proxy.Mode == ProxyModeTranslate && c.Proxy.Provider == "" {
+		return false, fmt.Errorf("proxy: translate mode requires provider (%s, %s)",
+			ProxyProviderOpenAI, ProxyProviderAnthropic)
+	}
+
+	// Score on llama-cpp bypasses the slot loop and races the
+	// llama_context against concurrent generation/embedding traffic
+	// (see backend/cpp/llama-cpp/grpc-server.cpp on Score). Reject the
+	// combination here so operators are forced to split the model.
+	const scoreConflicts = FLAG_CHAT | FLAG_COMPLETION | FLAG_EMBEDDINGS
+	if (c.Backend == "llama-cpp" || c.Backend == "llama") &&
+		c.HasUsecases(FLAG_SCORE) && c.KnownUsecases != nil &&
+		*c.KnownUsecases&scoreConflicts != 0 {
+		return false, fmt.Errorf(
+			"known_usecases conflict on llama-cpp: score is incompatible " +
+				"with chat/completion/embeddings — split into separate model configs")
+	}
+
 	return true, nil
 }
 
@@ -617,19 +976,19 @@ func (c *ModelConfig) GetConcurrencyGroups() []string {
 type ModelConfigUsecase int
 
 const (
-	FLAG_ANY              ModelConfigUsecase = 0b000000000000
-	FLAG_CHAT             ModelConfigUsecase = 0b000000000001
-	FLAG_COMPLETION       ModelConfigUsecase = 0b000000000010
-	FLAG_EDIT             ModelConfigUsecase = 0b000000000100
-	FLAG_EMBEDDINGS       ModelConfigUsecase = 0b000000001000
-	FLAG_RERANK           ModelConfigUsecase = 0b000000010000
-	FLAG_IMAGE            ModelConfigUsecase = 0b000000100000
-	FLAG_TRANSCRIPT       ModelConfigUsecase = 0b000001000000
-	FLAG_TTS              ModelConfigUsecase = 0b000010000000
-	FLAG_SOUND_GENERATION ModelConfigUsecase = 0b000100000000
-	FLAG_TOKENIZE         ModelConfigUsecase = 0b001000000000
-	FLAG_VAD              ModelConfigUsecase = 0b010000000000
-	FLAG_VIDEO            ModelConfigUsecase = 0b100000000000
+	FLAG_ANY                 ModelConfigUsecase = 0b000000000000
+	FLAG_CHAT                ModelConfigUsecase = 0b000000000001
+	FLAG_COMPLETION          ModelConfigUsecase = 0b000000000010
+	FLAG_EDIT                ModelConfigUsecase = 0b000000000100
+	FLAG_EMBEDDINGS          ModelConfigUsecase = 0b000000001000
+	FLAG_RERANK              ModelConfigUsecase = 0b000000010000
+	FLAG_IMAGE               ModelConfigUsecase = 0b000000100000
+	FLAG_TRANSCRIPT          ModelConfigUsecase = 0b000001000000
+	FLAG_TTS                 ModelConfigUsecase = 0b000010000000
+	FLAG_SOUND_GENERATION    ModelConfigUsecase = 0b000100000000
+	FLAG_TOKENIZE            ModelConfigUsecase = 0b001000000000
+	FLAG_VAD                 ModelConfigUsecase = 0b010000000000
+	FLAG_VIDEO               ModelConfigUsecase = 0b100000000000
 	FLAG_DETECTION           ModelConfigUsecase = 0b1000000000000
 	FLAG_VISION              ModelConfigUsecase = 0b10000000000000
 	FLAG_FACE_RECOGNITION    ModelConfigUsecase = 0b100000000000000
@@ -637,6 +996,14 @@ const (
 	FLAG_AUDIO_TRANSFORM     ModelConfigUsecase = 0b10000000000000000
 	FLAG_DIARIZATION         ModelConfigUsecase = 0b100000000000000000
 	FLAG_REALTIME_AUDIO      ModelConfigUsecase = 0b1000000000000000000
+	// Marks a model as wired for the Score gRPC primitive (joint
+	// log-prob of candidate continuations under a shared prompt). Must
+	// be declared explicitly via `known_usecases: [score]` — there's
+	// no heuristic for it. On the llama-cpp backend, Score bypasses
+	// the slot loop and races the llama_context, so Validate() refuses
+	// to load a llama-cpp config that combines FLAG_SCORE with
+	// chat/completion/embeddings.
+	FLAG_SCORE ModelConfigUsecase = 0b10000000000000000000
 
 	// Common Subsets
 	FLAG_LLM ModelConfigUsecase = FLAG_CHAT | FLAG_COMPLETION | FLAG_EDIT
@@ -646,12 +1013,12 @@ const (
 // Flags within the same group are NOT orthogonal (e.g., chat and completion are
 // both text/language). A model is multimodal when its usecases span 2+ groups.
 var ModalityGroups = []ModelConfigUsecase{
-	FLAG_CHAT | FLAG_COMPLETION | FLAG_EDIT,    // text/language
-	FLAG_VISION | FLAG_DETECTION,               // visual understanding
-	FLAG_TRANSCRIPT | FLAG_REALTIME_AUDIO,      // speech input — realtime_audio is any-to-any, so it counts here too
+	FLAG_CHAT | FLAG_COMPLETION | FLAG_EDIT,                // text/language
+	FLAG_VISION | FLAG_DETECTION,                           // visual understanding
+	FLAG_TRANSCRIPT | FLAG_REALTIME_AUDIO,                  // speech input — realtime_audio is any-to-any, so it counts here too
 	FLAG_TTS | FLAG_SOUND_GENERATION | FLAG_REALTIME_AUDIO, // audio output — and here, so a lone realtime_audio flag still reads as multimodal
-	FLAG_AUDIO_TRANSFORM,                       // audio in/out transforms
-	FLAG_IMAGE | FLAG_VIDEO,                    // visual generation
+	FLAG_AUDIO_TRANSFORM,                                   // audio in/out transforms
+	FLAG_IMAGE | FLAG_VIDEO,                                // visual generation
 }
 
 // IsMultimodal returns true if the given usecases span two or more orthogonal
@@ -674,19 +1041,19 @@ func GetAllModelConfigUsecases() map[string]ModelConfigUsecase {
 	return map[string]ModelConfigUsecase{
 		// Note: FLAG_ANY is intentionally excluded from this map
 		// because it's 0 and would always match in HasUsecases checks
-		"FLAG_CHAT":             FLAG_CHAT,
-		"FLAG_COMPLETION":       FLAG_COMPLETION,
-		"FLAG_EDIT":             FLAG_EDIT,
-		"FLAG_EMBEDDINGS":       FLAG_EMBEDDINGS,
-		"FLAG_RERANK":           FLAG_RERANK,
-		"FLAG_IMAGE":            FLAG_IMAGE,
-		"FLAG_TRANSCRIPT":       FLAG_TRANSCRIPT,
-		"FLAG_TTS":              FLAG_TTS,
-		"FLAG_SOUND_GENERATION": FLAG_SOUND_GENERATION,
-		"FLAG_TOKENIZE":         FLAG_TOKENIZE,
-		"FLAG_VAD":              FLAG_VAD,
-		"FLAG_LLM":              FLAG_LLM,
-		"FLAG_VIDEO":            FLAG_VIDEO,
+		"FLAG_CHAT":                FLAG_CHAT,
+		"FLAG_COMPLETION":          FLAG_COMPLETION,
+		"FLAG_EDIT":                FLAG_EDIT,
+		"FLAG_EMBEDDINGS":          FLAG_EMBEDDINGS,
+		"FLAG_RERANK":              FLAG_RERANK,
+		"FLAG_IMAGE":               FLAG_IMAGE,
+		"FLAG_TRANSCRIPT":          FLAG_TRANSCRIPT,
+		"FLAG_TTS":                 FLAG_TTS,
+		"FLAG_SOUND_GENERATION":    FLAG_SOUND_GENERATION,
+		"FLAG_TOKENIZE":            FLAG_TOKENIZE,
+		"FLAG_VAD":                 FLAG_VAD,
+		"FLAG_LLM":                 FLAG_LLM,
+		"FLAG_VIDEO":               FLAG_VIDEO,
 		"FLAG_DETECTION":           FLAG_DETECTION,
 		"FLAG_VISION":              FLAG_VISION,
 		"FLAG_FACE_RECOGNITION":    FLAG_FACE_RECOGNITION,
@@ -694,6 +1061,7 @@ func GetAllModelConfigUsecases() map[string]ModelConfigUsecase {
 		"FLAG_AUDIO_TRANSFORM":     FLAG_AUDIO_TRANSFORM,
 		"FLAG_DIARIZATION":         FLAG_DIARIZATION,
 		"FLAG_REALTIME_AUDIO":      FLAG_REALTIME_AUDIO,
+		"FLAG_SCORE":               FLAG_SCORE,
 	}
 }
 
@@ -876,6 +1244,14 @@ func (c *ModelConfig) GuessUsecases(u ModelConfigUsecase) bool {
 		if !slices.Contains(realtimeAudioBackends, c.Backend) {
 			return false
 		}
+	}
+
+	if (u & FLAG_SCORE) == FLAG_SCORE {
+		// No heuristic: Score-intent is a deliberate operator choice
+		// (it reserves the model from generation traffic on llama-cpp),
+		// so HasUsecases(FLAG_SCORE) is true only when KnownUsecases
+		// declares it explicitly.
+		return false
 	}
 
 	return true
