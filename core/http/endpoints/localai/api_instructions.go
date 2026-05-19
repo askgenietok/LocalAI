@@ -92,6 +92,12 @@ var instructionDefs = []instructionDef{
 		Tags:        []string{"branding"},
 		Intro:       "GET /api/branding is public so the login screen can render the configured logo before authentication. Text fields are saved through POST /api/settings; binary assets (logo, horizontal logo, favicon) use multipart upload at /api/branding/asset/{kind} and are served back from /branding/asset/{kind}.",
 	},
+	{
+		Name:        "chat-history",
+		Description: "Server-side persistence of WebUI chat conversations (#9432)",
+		Tags:        []string{"chat-history"},
+		Intro:       "Per-user CRUD over chat conversations. POST/PUT upsert by id; PUT /bulk replaces the entire conversation set in one shot (used for localStorage migration).",
+	},
 }
 
 // swaggerState holds parsed swagger spec data, initialised once.
