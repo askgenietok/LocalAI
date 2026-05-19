@@ -1213,6 +1213,12 @@ build-mock-backend: protogen-go
 clean-mock-backend:
 	rm -f tests/e2e/mock-backend/mock-backend
 
+build-cloud-proxy-backend: protogen-go
+	$(GOCMD) build -o tests/e2e/mock-backend/cloud-proxy ./backend/go/cloud-proxy
+
+clean-cloud-proxy-backend:
+	rm -f tests/e2e/mock-backend/cloud-proxy
+
 ########################################################
 ### UI E2E Test Server
 ########################################################

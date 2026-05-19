@@ -54,6 +54,118 @@ parameters:
 			Expect(err).To(BeNil())
 			Expect(valid).To(BeTrue())
 
+			// llama-cpp configs can't mix the score usecase with
+			// chat/completion/embeddings — Score bypasses the slot
+			// loop and would race the llama_context. The check fires
+			// at load and save time; here we exercise it directly.
+			scoreFlag := FLAG_SCORE | FLAG_CHAT
+			conflicting := ModelConfig{
+				Name:          "router-but-also-chat",
+				Backend:       "llama-cpp",
+				KnownUsecases: &scoreFlag,
+			}
+			valid, err = conflicting.Validate()
+			Expect(valid).To(BeFalse())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("score is incompatible"))
+
+			scoreOnly := FLAG_SCORE
+			dedicated := ModelConfig{
+				Name:          "router-only",
+				Backend:       "llama-cpp",
+				KnownUsecases: &scoreOnly,
+			}
+			valid, err = dedicated.Validate()
+			Expect(valid).To(BeTrue())
+			Expect(err).NotTo(HaveOccurred())
+
+			// The constraint is llama-cpp-specific; other backends
+			// may safely combine.
+			scoreAndChat := FLAG_SCORE | FLAG_CHAT
+			otherBackend := ModelConfig{
+				Name:          "vllm-router-and-chat",
+				Backend:       "vllm",
+				KnownUsecases: &scoreAndChat,
+			}
+			valid, err = otherBackend.Validate()
+			Expect(valid).To(BeTrue())
+			Expect(err).NotTo(HaveOccurred())
+
+			// Cloud-proxy: api_key_env and api_key_file are mutually
+			// exclusive — picking both is a config bug we catch at
+			// load/save rather than at backend-load time.
+			bothKeys := ModelConfig{
+				Name:    "both-keys",
+				Backend: "cloud-proxy",
+				Proxy: ProxyConfig{
+					UpstreamURL: "https://example.com/v1",
+					APIKeyEnv:   "OPENAI_KEY",
+					APIKeyFile:  "/run/secrets/openai",
+				},
+			}
+			valid, err = bothKeys.Validate()
+			Expect(valid).To(BeFalse())
+			Expect(err).To(MatchError(ContainSubstring("mutually exclusive")))
+
+			// Translate mode requires a provider — without one, the
+			// backend has no way to pick a wire format.
+			translateNoProvider := ModelConfig{
+				Name:    "translate-no-provider",
+				Backend: "cloud-proxy",
+				Proxy:   ProxyConfig{UpstreamURL: "https://example.com/v1", Mode: ProxyModeTranslate},
+			}
+			valid, err = translateNoProvider.Validate()
+			Expect(valid).To(BeFalse())
+			Expect(err).To(MatchError(ContainSubstring("translate mode requires provider")))
+
+			// Unknown mode is rejected.
+			badMode := ModelConfig{
+				Name:    "bad-mode",
+				Backend: "cloud-proxy",
+				Proxy:   ProxyConfig{UpstreamURL: "https://example.com/v1", Mode: "rewrite"},
+			}
+			valid, err = badMode.Validate()
+			Expect(valid).To(BeFalse())
+			Expect(err).To(MatchError(ContainSubstring("unknown mode")))
+
+			// Passthrough (default) with one key source is happy.
+			passthroughOK := ModelConfig{
+				Name:    "passthrough-ok",
+				Backend: "cloud-proxy",
+				Proxy:   ProxyConfig{UpstreamURL: "https://example.com/v1", APIKeyEnv: "OPENAI_KEY"},
+			}
+			valid, err = passthroughOK.Validate()
+			Expect(valid).To(BeTrue())
+			Expect(err).NotTo(HaveOccurred())
+
+			// ResolveAPIKey: env path. Empty env is an error (the
+			// operator named a var; us silently returning "" would
+			// mask a config bug).
+			os.Setenv("CLOUD_PROXY_TEST_KEY", "sk-live-abc")
+			k, err := ProxyConfig{APIKeyEnv: "CLOUD_PROXY_TEST_KEY"}.ResolveAPIKey()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k).To(Equal("sk-live-abc"))
+			os.Unsetenv("CLOUD_PROXY_TEST_KEY")
+			_, err = ProxyConfig{APIKeyEnv: "CLOUD_PROXY_TEST_KEY"}.ResolveAPIKey()
+			Expect(err).To(MatchError(ContainSubstring("unset")))
+
+			// ResolveAPIKey: file path. Trailing newline is trimmed
+			// — operators paste keys with newlines and the
+			// Authorization header would be malformed otherwise.
+			f, err := os.CreateTemp("", "apikey")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.Remove(f.Name())
+			_, _ = f.WriteString("sk-live-from-file\n")
+			f.Close()
+			k, err = ProxyConfig{APIKeyFile: f.Name()}.ResolveAPIKey()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k).To(Equal("sk-live-from-file"))
+
+			// ResolveAPIKey: neither set → empty, no error.
+			k, err = ProxyConfig{}.ResolveAPIKey()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k).To(BeEmpty())
+
 			// download https://raw.githubusercontent.com/mudler/LocalAI/v2.25.0/embedded/models/hermes-2-pro-mistral.yaml
 			httpClient := http.Client{}
 			resp, err := httpClient.Get("https://raw.githubusercontent.com/mudler/LocalAI/v2.25.0/embedded/models/hermes-2-pro-mistral.yaml")

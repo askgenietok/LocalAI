@@ -10,9 +10,12 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/mudler/LocalAI/core/backend"
 	"github.com/mudler/LocalAI/core/config"
+	"github.com/mudler/LocalAI/core/http/auth"
 	mcpTools "github.com/mudler/LocalAI/core/http/endpoints/mcp"
 	"github.com/mudler/LocalAI/core/http/middleware"
 	"github.com/mudler/LocalAI/core/schema"
+	"github.com/mudler/LocalAI/core/services/cloudproxy"
+	"github.com/mudler/LocalAI/core/services/routing/pii"
 	"github.com/mudler/LocalAI/pkg/functions"
 	reason "github.com/mudler/LocalAI/pkg/reasoning"
 
@@ -72,7 +75,7 @@ func mergeToolCallDeltas(existing []schema.ToolCall, deltas []schema.ToolCall) [
 // @Param request body schema.OpenAIRequest true "query params"
 // @Success 200 {object} schema.OpenAIResponse "Response"
 // @Router /v1/chat/completions [post]
-func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator *templates.Evaluator, startupOptions *config.ApplicationConfig, natsClient mcpTools.MCPNATSClient, assistantHolder *mcpTools.LocalAIAssistantHolder) echo.HandlerFunc {
+func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator *templates.Evaluator, startupOptions *config.ApplicationConfig, natsClient mcpTools.MCPNATSClient, assistantHolder *mcpTools.LocalAIAssistantHolder, piiRedactor *pii.Redactor, piiEvents pii.EventStore) echo.HandlerFunc {
 	process := func(s string, req *schema.OpenAIRequest, config *config.ModelConfig, loader *model.ModelLoader, responses chan schema.OpenAIResponse, extraUsage bool, id string, created int) error {
 		initialMessage := schema.OpenAIResponse{
 			ID:      id,
@@ -449,6 +452,15 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 
 		xlog.Debug("Chat endpoint configuration read", "config", config)
 
+		// Cloud-proxy bail. Bypasses the local pipeline (templating,
+		// MCP injection, gRPC backend) and forwards via the cloud-
+		// proxy backend, which does the outbound HTTP. The streaming
+		// PII filter still runs because its input is per-token text
+		// extracted from the wire envelope, not the envelope itself.
+		if config.IsCloudProxyBackendPassthrough() {
+			return forwardCloudProxyOpenAIViaBackend(c, config, input, piiRedactor, piiEvents, ml, startupOptions)
+		}
+
 		funcs := input.Functions
 		shouldUseFn := len(input.Functions) > 0 && config.ShouldUseFunctions()
 		strictMode := false
@@ -683,6 +695,42 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 			c.Response().Header().Set("Connection", "keep-alive")
 			c.Response().Header().Set("X-Correlation-ID", id)
 
+			// Per-stream PII filter: when the resolved model has PII
+			// enabled (per the per-model gate the request-side
+			// middleware also reads), wrap the response content so
+			// values that span chunk boundaries still get masked. The
+			// filter is gated on the same ModelConfig accessor as the
+			// request middleware, so a user that disabled PII on the
+			// model gets no filter on either direction.
+			var streamPIIFilter *pii.StreamFilter
+			if piiRedactor != nil && config.PIIIsEnabled() {
+				correlationID := c.Response().Header().Get("X-Correlation-ID")
+				userID := ""
+				if u := auth.GetUser(c); u != nil {
+					userID = u.ID
+				}
+				// Per-model action overrides go through the same map
+				// the request-side middleware uses; convert raw YAML
+				// strings to typed Actions and drop unknowns.
+				var overrides map[string]pii.Action
+				if raw := config.PIIPatternOverrides(); len(raw) > 0 {
+					overrides = make(map[string]pii.Action, len(raw))
+					for id, action := range raw {
+						switch pii.Action(action) {
+						case pii.ActionMask, pii.ActionBlock, pii.ActionRouteLocal:
+							overrides[id] = pii.Action(action)
+						}
+					}
+				}
+				streamPIIFilter = pii.NewStreamFilter(
+					piiRedactor,
+					overrides,
+					piiEvents,
+					correlationID,
+					userID,
+				)
+			}
+
 			mcpStreamMaxIterations := 10
 			if config.Agent.MaxIterations > 0 {
 				mcpStreamMaxIterations = config.Agent.MaxIterations
@@ -739,12 +787,48 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 								collectedToolCalls = mergeToolCallDeltas(collectedToolCalls, ev.Choices[0].Delta.ToolCalls)
 							}
 						}
-						// Collect content for MCP conversation history and automatic tool parsing fallback
+						// Collect content for MCP conversation history and automatic tool parsing fallback.
+						// We collect the RAW (unfiltered) content so the model's tool-call
+						// markup keeps parsing correctly even when PII redaction would mask
+						// substrings.
 						if (hasMCPToolsStream || config.FunctionsConfig.AutomaticToolParsingFallback) && ev.Choices[0].Delta != nil && ev.Choices[0].Delta.Content != nil {
 							if s, ok := ev.Choices[0].Delta.Content.(string); ok {
 								collectedContent += s
 							} else if sp, ok := ev.Choices[0].Delta.Content.(*string); ok && sp != nil {
 								collectedContent += *sp
+							}
+						}
+						// Stream-side PII filter: feed the content delta
+						// through the buffered-emit filter. The filter
+						// holds back a tail to handle pattern boundaries
+						// across chunks, so a Push may legitimately
+						// return "" — drop the chunk in that case rather
+						// than emitting an empty Delta to the wire.
+						if streamPIIFilter != nil && ev.Choices[0].Delta != nil && ev.Choices[0].Delta.Content != nil {
+							var raw string
+							switch v := ev.Choices[0].Delta.Content.(type) {
+							case string:
+								raw = v
+							case *string:
+								if v != nil {
+									raw = *v
+								}
+							}
+							filtered := streamPIIFilter.Push(raw)
+							if filtered == "" {
+								// Fully buffered — skip this chunk's
+								// content. Still emit non-content chunks
+								// (role, tool_calls). When this delta is
+								// content-only and we buffer it, drop the
+								// whole event to avoid a vestigial
+								// {"delta":{}} on the wire.
+								if ev.Choices[0].Delta.Role == "" && len(ev.Choices[0].Delta.ToolCalls) == 0 && ev.Choices[0].Delta.Reasoning == nil {
+									continue
+								}
+								// Mixed delta — strip content, keep the rest.
+								ev.Choices[0].Delta.Content = nil
+							} else {
+								ev.Choices[0].Delta.Content = filtered
 							}
 						}
 						// OpenAI streaming spec: intermediate chunks must NOT
@@ -797,7 +881,10 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 				// still trying to send (e.g., after client disconnect). The goroutine
 				// calls close(responses) when done, which terminates the drain.
 				if input.Context.Err() != nil {
-					go func() { for range responses {} }()
+					go func() {
+						for range responses {
+						}
+					}()
 					<-ended
 				}
 
@@ -892,6 +979,31 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 					}
 				}
 
+				// Drain the per-stream PII filter before the stop chunk
+				// so any text held back by the buffered-emit invariant
+				// reaches the client as a regular content delta. We
+				// emit it as a chunk WITHOUT a finish_reason so the
+				// next "stop" chunk still terminates the stream.
+				if streamPIIFilter != nil {
+					residual := streamPIIFilter.Drain()
+					if residual != "" {
+						drainResp := &schema.OpenAIResponse{
+							ID:      id,
+							Created: created,
+							Model:   input.Model,
+							Choices: []schema.Choice{{
+								Delta: &schema.Message{Content: residual},
+								Index: 0,
+							}},
+							Object: "chat.completion.chunk",
+						}
+						if drainBytes, err := json.Marshal(drainResp); err == nil {
+							_, _ = fmt.Fprintf(c.Response().Writer, "data: %s\n\n", drainBytes)
+							c.Response().Flush()
+						}
+					}
+				}
+
 				// No MCP tools to execute, send final stop message
 				finishReason := FinishReasonStop
 				if toolsCalled && len(input.Tools) > 0 {
@@ -916,6 +1028,14 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 					Object: "chat.completion.chunk",
 				}
 				respData, _ := json.Marshal(resp)
+
+				pt, ct := 0, 0
+				if usage != nil {
+					pt = usage.PromptTokens
+					ct = usage.CompletionTokens
+				}
+				middleware.StampUsage(c, input.Model, pt, ct)
+
 				fmt.Fprintf(c.Response().Writer, "data: %s\n\n", respData)
 
 				// Trailing usage chunk per OpenAI spec: emit only when the
@@ -1290,6 +1410,8 @@ func ChatEndpoint(cl *config.ModelConfigLoader, ml *model.ModelLoader, evaluator
 				respData, _ := json.Marshal(resp)
 				xlog.Debug("Response", "response", string(respData))
 
+				middleware.StampUsage(c, input.Model, usage.PromptTokens, usage.CompletionTokens)
+
 				// Return the prediction in the response body
 				return c.JSON(200, resp)
 			} // end MCP iteration loop
@@ -1335,4 +1457,21 @@ func handleQuestion(config *config.ModelConfig, funcResults []functions.FuncCall
 	xlog.Debug("No action received from LLM, without a message, computing a reply")
 
 	return "", nil
+}
+
+// forwardCloudProxyOpenAIViaBackend marshals the OpenAI request,
+// constructs the streaming PII filter (when this model has PII
+// enabled), and hands off to the cloud-proxy gRPC backend which does
+// the outbound HTTP. The chat endpoint owns the body+filter
+// construction because it's the only place the request lands as a
+// parsed *schema.OpenAIRequest.
+func forwardCloudProxyOpenAIViaBackend(c echo.Context, cfg *config.ModelConfig, input *schema.OpenAIRequest, piiRedactor *pii.Redactor, piiEvents pii.EventStore, ml *model.ModelLoader, appConfig *config.ApplicationConfig) error {
+	body, err := json.Marshal(input)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "cloudproxy: marshal request: "+err.Error())
+	}
+
+	correlationID := c.Response().Header().Get("X-Correlation-ID")
+	streamFilter := cloudproxy.BuildStreamFilter(c, cfg, input.Stream, piiRedactor, piiEvents, correlationID)
+	return cloudproxy.ForwardViaBackend(c, cfg, body, streamFilter, ml, appConfig)
 }
