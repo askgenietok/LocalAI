@@ -1,63 +1,132 @@
 package model
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"io/ioutil"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"text/template"
+	"time"
 
-	"github.com/hashicorp/go-multierror"
+	"github.com/mudler/LocalAI/pkg/system"
+	"github.com/mudler/LocalAI/pkg/utils"
+
 	"github.com/rs/zerolog/log"
-
-	rwkv "github.com/donomii/go-rwkv.cpp"
-	gpt2 "github.com/go-skynet/go-gpt2.cpp"
-	gptj "github.com/go-skynet/go-gpt4all-j.cpp"
-	llama "github.com/go-skynet/go-llama.cpp"
 )
 
-type ModelLoader struct {
-	ModelPath string
-	mu        sync.Mutex
+// new idea: what if we declare a struct of these here, and use a loop to check?
 
-	models            map[string]*llama.LLama
-	gptmodels         map[string]*gptj.GPTJ
-	gpt2models        map[string]*gpt2.GPT2
-	gptstablelmmodels map[string]*gpt2.StableLM
-	rwkv              map[string]*rwkv.RwkvState
-	promptsTemplates  map[string]*template.Template
+// TODO: Split ModelLoader and TemplateLoader? Just to keep things more organized. Left together to share a mutex until I look into that. Would split if we separate directories for .bin/.yaml and .tmpl
+type ModelLoader struct {
+	ModelPath        string
+	mu               sync.Mutex
+	singletonLock    sync.Mutex
+	singletonMode    bool
+	models           map[string]*Model
+	wd               *WatchDog
+	externalBackends map[string]string
 }
 
-func NewModelLoader(modelPath string) *ModelLoader {
-	return &ModelLoader{
-		ModelPath:         modelPath,
-		gpt2models:        make(map[string]*gpt2.GPT2),
-		gptmodels:         make(map[string]*gptj.GPTJ),
-		gptstablelmmodels: make(map[string]*gpt2.StableLM),
-		models:            make(map[string]*llama.LLama),
-		rwkv:              make(map[string]*rwkv.RwkvState),
-		promptsTemplates:  make(map[string]*template.Template),
+func NewModelLoader(system *system.SystemState, singleActiveBackend bool) *ModelLoader {
+	nml := &ModelLoader{
+		ModelPath:        system.Model.ModelsPath,
+		models:           make(map[string]*Model),
+		singletonMode:    singleActiveBackend,
+		externalBackends: make(map[string]string),
 	}
+
+	return nml
+}
+
+func (ml *ModelLoader) SetWatchDog(wd *WatchDog) {
+	ml.wd = wd
 }
 
 func (ml *ModelLoader) ExistsInModelPath(s string) bool {
-	_, err := os.Stat(filepath.Join(ml.ModelPath, s))
-	return err == nil
+	return utils.ExistsInPath(ml.ModelPath, s)
 }
 
-func (ml *ModelLoader) ListModels() ([]string, error) {
-	files, err := ioutil.ReadDir(ml.ModelPath)
+func (ml *ModelLoader) SetExternalBackend(name, uri string) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	ml.externalBackends[name] = uri
+}
+
+func (ml *ModelLoader) DeleteExternalBackend(name string) {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	delete(ml.externalBackends, name)
+}
+
+func (ml *ModelLoader) GetExternalBackend(name string) string {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	return ml.externalBackends[name]
+}
+
+func (ml *ModelLoader) GetAllExternalBackends(o *Options) map[string]string {
+	backends := make(map[string]string)
+	maps.Copy(backends, ml.externalBackends)
+	if o != nil {
+		maps.Copy(backends, o.externalBackends)
+	}
+	return backends
+}
+
+var knownFilesToSkip []string = []string{
+	"MODEL_CARD",
+	"README",
+	"README.md",
+}
+
+var knownModelsNameSuffixToSkip []string = []string{
+	".tmpl",
+	".keep",
+	".yaml",
+	".yml",
+	".json",
+	".txt",
+	".pt",
+	".onnx",
+	".md",
+	".MD",
+	".DS_Store",
+	".",
+	".safetensors",
+	".bin",
+	".partial",
+	".tar.gz",
+}
+
+const retryTimeout = time.Duration(2 * time.Minute)
+
+func (ml *ModelLoader) ListFilesInModelPath() ([]string, error) {
+	files, err := os.ReadDir(ml.ModelPath)
 	if err != nil {
 		return []string{}, err
 	}
 
 	models := []string{}
+FILE:
 	for _, file := range files {
-		// Skip templates, YAML and .keep files
-		if strings.HasSuffix(file.Name(), ".tmpl") || strings.HasSuffix(file.Name(), ".keep") || strings.HasSuffix(file.Name(), ".yaml") || strings.HasSuffix(file.Name(), ".yml") {
+
+		for _, skip := range knownFilesToSkip {
+			if strings.EqualFold(file.Name(), skip) {
+				continue FILE
+			}
+		}
+
+		// Skip templates, YAML, .keep, .json, and .DS_Store files
+		for _, skip := range knownModelsNameSuffixToSkip {
+			if strings.HasSuffix(file.Name(), skip) {
+				continue FILE
+			}
+		}
+
+		// Skip directories
+		if file.IsDir() {
 			continue
 		}
 
@@ -67,299 +136,85 @@ func (ml *ModelLoader) ListModels() ([]string, error) {
 	return models, nil
 }
 
-func (ml *ModelLoader) TemplatePrefix(modelName string, in interface{}) (string, error) {
+func (ml *ModelLoader) ListLoadedModels() []*Model {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
 
-	m, ok := ml.promptsTemplates[modelName]
-	if !ok {
-		modelFile := filepath.Join(ml.ModelPath, modelName)
-		if err := ml.loadTemplateIfExists(modelName, modelFile); err != nil {
-			return "", err
-		}
-
-		t, exists := ml.promptsTemplates[modelName]
-		if exists {
-			m = t
-		}
-	}
-	if m == nil {
-		return "", fmt.Errorf("failed loading any template")
+	models := []*Model{}
+	for _, model := range ml.models {
+		models = append(models, model)
 	}
 
-	var buf bytes.Buffer
-
-	if err := m.Execute(&buf, in); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
+	return models
 }
 
-func (ml *ModelLoader) loadTemplateIfExists(modelName, modelFile string) error {
-	// Check if the template was already loaded
-	if _, ok := ml.promptsTemplates[modelName]; ok {
-		return nil
-	}
-
-	// Check if the model path exists
-	// skip any error here - we run anyway if a template does not exist
-	modelTemplateFile := fmt.Sprintf("%s.tmpl", modelName)
-
-	if !ml.ExistsInModelPath(modelTemplateFile) {
-		return nil
-	}
-
-	dat, err := os.ReadFile(filepath.Join(ml.ModelPath, modelTemplateFile))
-	if err != nil {
-		return err
-	}
-
-	// Parse the template
-	tmpl, err := template.New("prompt").Parse(string(dat))
-	if err != nil {
-		return err
-	}
-	ml.promptsTemplates[modelName] = tmpl
-
-	return nil
-}
-
-func (ml *ModelLoader) LoadStableLMModel(modelName string) (*gpt2.StableLM, error) {
-	ml.mu.Lock()
-	defer ml.mu.Unlock()
-
+func (ml *ModelLoader) LoadModel(modelID, modelName string, loader func(string, string, string) (*Model, error)) (*Model, error) {
 	// Check if we already have a loaded model
-	if !ml.ExistsInModelPath(modelName) {
-		return nil, fmt.Errorf("model does not exist")
-	}
-
-	if m, ok := ml.gptstablelmmodels[modelName]; ok {
-		log.Debug().Msgf("Model already loaded in memory: %s", modelName)
-		return m, nil
+	if model := ml.CheckIsLoaded(modelID); model != nil {
+		return model, nil
 	}
 
 	// Load the model and keep it in memory for later use
 	modelFile := filepath.Join(ml.ModelPath, modelName)
 	log.Debug().Msgf("Loading model in memory from file: %s", modelFile)
 
-	model, err := gpt2.NewStableLM(modelFile)
-	if err != nil {
-		return nil, err
-	}
-
-	// If there is a prompt template, load it
-	if err := ml.loadTemplateIfExists(modelName, modelFile); err != nil {
-		return nil, err
-	}
-
-	ml.gptstablelmmodels[modelName] = model
-	return model, err
-}
-
-func (ml *ModelLoader) LoadGPT2Model(modelName string) (*gpt2.GPT2, error) {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
-
-	// Check if we already have a loaded model
-	if !ml.ExistsInModelPath(modelName) {
-		return nil, fmt.Errorf("model does not exist")
-	}
-
-	if m, ok := ml.gpt2models[modelName]; ok {
-		log.Debug().Msgf("Model already loaded in memory: %s", modelName)
-		return m, nil
-	}
-
-	// Load the model and keep it in memory for later use
-	modelFile := filepath.Join(ml.ModelPath, modelName)
-	log.Debug().Msgf("Loading model in memory from file: %s", modelFile)
-
-	model, err := gpt2.New(modelFile)
+	model, err := loader(modelID, modelName, modelFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load model with internal loader: %s", err)
 	}
 
-	// If there is a prompt template, load it
-	if err := ml.loadTemplateIfExists(modelName, modelFile); err != nil {
-		return nil, err
-	}
-
-	ml.gpt2models[modelName] = model
-	return model, err
-}
-
-func (ml *ModelLoader) LoadGPTJModel(modelName string) (*gptj.GPTJ, error) {
-	ml.mu.Lock()
-	defer ml.mu.Unlock()
-
-	// Check if we already have a loaded model
-	if !ml.ExistsInModelPath(modelName) {
-		return nil, fmt.Errorf("model does not exist")
-	}
-
-	if m, ok := ml.gptmodels[modelName]; ok {
-		log.Debug().Msgf("Model already loaded in memory: %s", modelName)
-		return m, nil
-	}
-
-	// Load the model and keep it in memory for later use
-	modelFile := filepath.Join(ml.ModelPath, modelName)
-	log.Debug().Msgf("Loading model in memory from file: %s", modelFile)
-
-	model, err := gptj.New(modelFile)
-	if err != nil {
-		return nil, err
-	}
-
-	// If there is a prompt template, load it
-	if err := ml.loadTemplateIfExists(modelName, modelFile); err != nil {
-		return nil, err
-	}
-
-	ml.gptmodels[modelName] = model
-	return model, err
-}
-
-func (ml *ModelLoader) LoadRWKV(modelName, tokenFile string, threads uint32) (*rwkv.RwkvState, error) {
-	ml.mu.Lock()
-	defer ml.mu.Unlock()
-
-	log.Debug().Msgf("Loading model name: %s", modelName)
-
-	// Check if we already have a loaded model
-	if !ml.ExistsInModelPath(modelName) {
-		return nil, fmt.Errorf("model does not exist")
-	}
-
-	if m, ok := ml.rwkv[modelName]; ok {
-		log.Debug().Msgf("Model already loaded in memory: %s", modelName)
-		return m, nil
-	}
-
-	// Load the model and keep it in memory for later use
-	modelFile := filepath.Join(ml.ModelPath, modelName)
-	tokenPath := filepath.Join(ml.ModelPath, tokenFile)
-	log.Debug().Msgf("Loading model in memory from file: %s", modelFile)
-
-	model := rwkv.LoadFiles(modelFile, tokenPath, threads)
 	if model == nil {
-		return nil, fmt.Errorf("could not load model")
+		return nil, fmt.Errorf("loader didn't return a model")
 	}
 
-	ml.rwkv[modelName] = model
+	ml.models[modelID] = model
+
 	return model, nil
 }
 
-func (ml *ModelLoader) LoadLLaMAModel(modelName string, opts ...llama.ModelOption) (*llama.LLama, error) {
+func (ml *ModelLoader) ShutdownModel(modelName string) error {
 	ml.mu.Lock()
 	defer ml.mu.Unlock()
 
-	log.Debug().Msgf("Loading model name: %s", modelName)
-
-	// Check if we already have a loaded model
-	if !ml.ExistsInModelPath(modelName) {
-		return nil, fmt.Errorf("model does not exist")
-	}
-
-	if m, ok := ml.models[modelName]; ok {
-		log.Debug().Msgf("Model already loaded in memory: %s", modelName)
-		return m, nil
-	}
-
-	// Load the model and keep it in memory for later use
-	modelFile := filepath.Join(ml.ModelPath, modelName)
-	log.Debug().Msgf("Loading model in memory from file: %s", modelFile)
-
-	model, err := llama.New(modelFile, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	// If there is a prompt template, load it
-	if err := ml.loadTemplateIfExists(modelName, modelFile); err != nil {
-		return nil, err
-	}
-
-	ml.models[modelName] = model
-	return model, err
+	return ml.deleteProcess(modelName)
 }
 
-const tokenizerSuffix = ".tokenizer.json"
-
-var loadedModels map[string]interface{} = map[string]interface{}{}
-var muModels sync.Mutex
-
-func (ml *ModelLoader) BackendLoader(backendString string, modelFile string, llamaOpts []llama.ModelOption, threads uint32) (model interface{}, err error) {
-	switch strings.ToLower(backendString) {
-	case "llama":
-		return ml.LoadLLaMAModel(modelFile, llamaOpts...)
-	case "stablelm":
-		return ml.LoadStableLMModel(modelFile)
-	case "gpt2":
-		return ml.LoadGPT2Model(modelFile)
-	case "gptj":
-		return ml.LoadGPTJModel(modelFile)
-	case "rwkv":
-		return ml.LoadRWKV(modelFile, modelFile+tokenizerSuffix, threads)
-	default:
-		return nil, fmt.Errorf("backend unsupported: %s", backendString)
-	}
-}
-
-func (ml *ModelLoader) GreedyLoader(modelFile string, llamaOpts []llama.ModelOption, threads uint32) (model interface{}, err error) {
-	updateModels := func(model interface{}) {
-		muModels.Lock()
-		defer muModels.Unlock()
-		loadedModels[modelFile] = model
+func (ml *ModelLoader) CheckIsLoaded(s string) *Model {
+	ml.mu.Lock()
+	defer ml.mu.Unlock()
+	m, ok := ml.models[s]
+	if !ok {
+		return nil
 	}
 
-	muModels.Lock()
-	m, exists := loadedModels[modelFile]
-	if exists {
-		muModels.Unlock()
-		return m, nil
-	}
-	muModels.Unlock()
+	log.Debug().Msgf("Model already loaded in memory: %s", s)
+	client := m.GRPC(false, ml.wd)
 
-	model, modelerr := ml.LoadLLaMAModel(modelFile, llamaOpts...)
-	if modelerr == nil {
-		updateModels(model)
-		return model, nil
-	} else {
-		err = multierror.Append(err, modelerr)
-	}
+	log.Debug().Msgf("Checking model availability (%s)", s)
+	cTimeout, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 
-	model, modelerr = ml.LoadGPTJModel(modelFile)
-	if modelerr == nil {
-		updateModels(model)
-		return model, nil
-	} else {
-		err = multierror.Append(err, modelerr)
-	}
-
-	model, modelerr = ml.LoadGPT2Model(modelFile)
-	if modelerr == nil {
-		updateModels(model)
-		return model, nil
-	} else {
-		err = multierror.Append(err, modelerr)
+	alive, err := client.HealthCheck(cTimeout)
+	if !alive {
+		log.Warn().Msgf("GRPC Model not responding: %s", err.Error())
+		log.Warn().Msgf("Deleting the process in order to recreate it")
+		process := m.Process()
+		if process == nil {
+			log.Error().Msgf("Process not found for '%s' and the model is not responding anymore !", s)
+			return m
+		}
+		if !process.IsAlive() {
+			log.Debug().Msgf("GRPC Process is not responding: %s", s)
+			// stop and delete the process, this forces to re-load the model and re-create again the service
+			err := ml.deleteProcess(s)
+			if err != nil {
+				log.Error().Err(err).Str("process", s).Msg("error stopping process")
+			}
+			return nil
+		}
 	}
 
-	model, modelerr = ml.LoadStableLMModel(modelFile)
-	if modelerr == nil {
-		updateModels(model)
-		return model, nil
-	} else {
-		err = multierror.Append(err, modelerr)
-	}
-
-	model, modelerr = ml.LoadRWKV(modelFile, modelFile+tokenizerSuffix, threads)
-	if modelerr == nil {
-		updateModels(model)
-		return model, nil
-	} else {
-		err = multierror.Append(err, modelerr)
-	}
-
-	return nil, fmt.Errorf("could not load model - all backends returned error: %s", err.Error())
+	return m
 }

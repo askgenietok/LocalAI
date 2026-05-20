@@ -1,637 +1,408 @@
 <h1 align="center">
   <br>
-  <img height="300" src="https://user-images.githubusercontent.com/2420543/233147843-88697415-6dbf-4368-a862-ab217f9f7342.jpeg"> <br>
-    LocalAI
+  <img width="300" src="./core/http/static/logo.png"> <br>
 <br>
 </h1>
 
-[![tests](https://github.com/go-skynet/LocalAI/actions/workflows/test.yml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/test.yml) [![build container images](https://github.com/go-skynet/LocalAI/actions/workflows/image.yml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/image.yml)
+<p align="center">
+<a href="https://github.com/go-skynet/LocalAI/fork" target="blank">
+<img src="https://img.shields.io/github/forks/go-skynet/LocalAI?style=for-the-badge" alt="LocalAI forks"/>
+</a>
+<a href="https://github.com/go-skynet/LocalAI/stargazers" target="blank">
+<img src="https://img.shields.io/github/stars/go-skynet/LocalAI?style=for-the-badge" alt="LocalAI stars"/>
+</a>
+<a href="https://github.com/go-skynet/LocalAI/pulls" target="blank">
+<img src="https://img.shields.io/github/issues-pr/go-skynet/LocalAI?style=for-the-badge" alt="LocalAI pull-requests"/>
+</a>
+<a href='https://github.com/go-skynet/LocalAI/releases'>
+<img src='https://img.shields.io/github/release/go-skynet/LocalAI?&label=Latest&style=for-the-badge'>
+</a>
+</p>
 
-[![](https://dcbadge.vercel.app/api/server/uJAeKSAGDy?style=flat-square&theme=default-inverted)](https://discord.gg/uJAeKSAGDy) 
+<p align="center">
+<a href="https://hub.docker.com/r/localai/localai" target="blank">
+<img src="https://img.shields.io/badge/dockerhub-images-important.svg?logo=Docker" alt="LocalAI Docker hub"/>
+</a>
+<a href="https://quay.io/repository/go-skynet/local-ai?tab=tags&tag=latest" target="blank">
+<img src="https://img.shields.io/badge/quay.io-images-important.svg?" alt="LocalAI Quay.io"/>
+</a>
+</p>
 
-**LocalAI** is a drop-in replacement REST API compatible with OpenAI for local CPU inferencing. It allows to run models locally or on-prem with consumer grade hardware. It is based on [llama.cpp](https://github.com/ggerganov/llama.cpp), [gpt4all](https://github.com/nomic-ai/gpt4all), [rwkv.cpp](https://github.com/saharNooby/rwkv.cpp) and [ggml](https://github.com/ggerganov/ggml), including support GPT4ALL-J which is licensed under Apache 2.0.
+<p align="center">
+<a href="https://twitter.com/LocalAI_API" target="blank">
+<img src="https://img.shields.io/badge/X-%23000000.svg?style=for-the-badge&logo=X&logoColor=white&label=LocalAI_API" alt="Follow LocalAI_API"/>
+</a>
+<a href="https://discord.gg/uJAeKSAGDy" target="blank">
+<img src="https://dcbadge.vercel.app/api/server/uJAeKSAGDy?style=flat-square&theme=default-inverted" alt="Join LocalAI Discord Community"/>
+</a>
+</p>
 
-- OpenAI compatible API
-- Supports multiple models
-- Once loaded the first time, it keep models loaded in memory for faster inference
-- Support for prompt templates
-- Doesn't shell-out, but uses C bindings for a faster inference and better performance. 
+<p align="center">
+<a href="https://trendshift.io/repositories/5539" target="_blank"><img src="https://trendshift.io/api/badge/repositories/5539" alt="mudler%2FLocalAI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
 
-LocalAI is a community-driven project, focused on making the AI accessible to anyone. Any contribution, feedback and PR is welcome! It was initially created by [mudler](https://github.com/mudler/) at the [SpectroCloud OSS Office](https://github.com/spectrocloud).
+> :bulb: Get help - [❓FAQ](https://localai.io/faq/) [💭Discussions](https://github.com/go-skynet/LocalAI/discussions) [:speech_balloon: Discord](https://discord.gg/uJAeKSAGDy) [:book: Documentation website](https://localai.io/)
+>
+> [💻 Quickstart](https://localai.io/basics/getting_started/) [🖼️ Models](https://models.localai.io/) [🚀 Roadmap](https://github.com/mudler/LocalAI/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap) [🌍 Explorer](https://explorer.localai.io) [🛫 Examples](https://github.com/mudler/LocalAI-examples) Try on 
+[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/localaiofficial_bot)
 
-See [examples on how to integrate LocalAI](https://github.com/go-skynet/LocalAI/tree/master/examples/).
+[![tests](https://github.com/go-skynet/LocalAI/actions/workflows/test.yml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/test.yml)[![Build and Release](https://github.com/go-skynet/LocalAI/actions/workflows/release.yaml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/release.yaml)[![build container images](https://github.com/go-skynet/LocalAI/actions/workflows/image.yml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/image.yml)[![Bump dependencies](https://github.com/go-skynet/LocalAI/actions/workflows/bump_deps.yaml/badge.svg)](https://github.com/go-skynet/LocalAI/actions/workflows/bump_deps.yaml)[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/localai)](https://artifacthub.io/packages/search?repo=localai)
 
-## News
-
-- 02-05-2023: Support for `rwkv.cpp` models ( https://github.com/go-skynet/LocalAI/pull/158 ) and for `/edits` endpoint
-- 01-05-2023: Support for SSE stream of tokens in `llama.cpp` backends ( https://github.com/go-skynet/LocalAI/pull/152 )
-
-Twitter: [@LocalAI_API](https://twitter.com/LocalAI_API) and [@mudler_it](https://twitter.com/mudler_it)
-
-### Blogs and articles
-
-- [Tutorial to use k8sgpt with LocalAI](https://medium.com/@tyler_97636/k8sgpt-localai-unlock-kubernetes-superpowers-for-free-584790de9b65) - excellent usecase for localAI, using AI to analyse Kubernetes clusters.
-
-## Contribute and help
-
-To help the project you can:
-
-- Upvote the [Reddit post](https://www.reddit.com/r/selfhosted/comments/12w4p2f/localai_openai_compatible_api_to_run_llm_models/) about LocalAI.
-
-- [Hacker news post](https://news.ycombinator.com/item?id=35726934) - help us out by voting if you like this project.
-
-- If you have technological skills and want to contribute to development, have a look at the open issues. If you are new you can have a look at the [good-first-issue](https://github.com/go-skynet/LocalAI/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) and [help-wanted](https://github.com/go-skynet/LocalAI/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
-
-- If you don't have technological skills you can still help improving documentation or add examples or share your user-stories with our community, any help and contribution is welcome!
-
-## Model compatibility
-
-It is compatible with the models supported by [llama.cpp](https://github.com/ggerganov/llama.cpp) supports also [GPT4ALL-J](https://github.com/nomic-ai/gpt4all) and [cerebras-GPT with ggml](https://huggingface.co/lxe/Cerebras-GPT-2.7B-Alpaca-SP-ggml).
-
-Tested with:
-- Vicuna
-- Alpaca
-- [GPT4ALL](https://github.com/nomic-ai/gpt4all) (changes required, see below)
-- [GPT4ALL-J](https://gpt4all.io/models/ggml-gpt4all-j.bin) (no changes required)
-- Koala
-- [cerebras-GPT with ggml](https://huggingface.co/lxe/Cerebras-GPT-2.7B-Alpaca-SP-ggml)
-- WizardLM
-- [RWKV](https://github.com/BlinkDL/RWKV-LM) models with [rwkv.cpp](https://github.com/saharNooby/rwkv.cpp)
-
-### GPT4ALL
-
-Note: You might need to convert older models to the new format, see [here](https://github.com/ggerganov/llama.cpp#using-gpt4all) for instance to run `gpt4all`.
-
-### RWKV
-
-<details>
-
-A full example on how to run a rwkv model is in the [examples](https://github.com/go-skynet/LocalAI/tree/master/examples/rwkv).
-
-Note: rwkv models have an associated tokenizer along that needs to be provided with it:
-
-```
-36464540 -rw-r--r--  1 mudler mudler 1.2G May  3 10:51 rwkv_small
-36464543 -rw-r--r--  1 mudler mudler 2.4M May  3 10:51 rwkv_small.tokenizer.json
-```
-
-</details>
-
-### Others
-
-It should also be compatible with StableLM and GPTNeoX ggml models (untested).
-
-### Hardware requirements
-
-Depending on the model you are attempting to run might need more RAM or CPU resources. Check out also [here](https://github.com/ggerganov/llama.cpp#memorydisk-requirements) for `ggml` based backends. `rwkv` is less expensive on resources.
+**LocalAI** is the free, Open Source OpenAI alternative. LocalAI act as a drop-in replacement REST API that's compatible with OpenAI (Elevenlabs, Anthropic... ) API specifications for local AI inferencing. It allows you to run LLMs, generate images, audio (and not only) locally or on-prem with consumer grade hardware, supporting multiple model families. Does not require GPU. It is created and maintained by [Ettore Di Giacinto](https://github.com/mudler).
 
 
-## Usage
+## 📚🆕 Local Stack Family
 
-> `LocalAI` comes by default as a container image. You can check out all the available images with corresponding tags [here](https://quay.io/repository/go-skynet/local-ai?tab=tags&tag=latest).
+🆕 LocalAI is now part of a comprehensive suite of AI tools designed to work together:
 
-The easiest way to run LocalAI is by using `docker-compose`:
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/mudler/LocalAGI">
+        <img src="https://raw.githubusercontent.com/mudler/LocalAGI/refs/heads/main/webui/react-ui/public/logo_2.png" width="300" alt="LocalAGI Logo">
+      </a>
+    </td>
+    <td width="50%" valign="top">
+      <h3><a href="https://github.com/mudler/LocalAGI">LocalAGI</a></h3>
+      <p>A powerful Local AI agent management platform that serves as a drop-in replacement for OpenAI's Responses API, enhanced with advanced agentic capabilities.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="https://github.com/mudler/LocalRecall">
+        <img src="https://raw.githubusercontent.com/mudler/LocalRecall/refs/heads/main/static/localrecall_horizontal.png" width="300" alt="LocalRecall Logo">
+      </a>
+    </td>
+    <td width="50%" valign="top">
+      <h3><a href="https://github.com/mudler/LocalRecall">LocalRecall</a></h3>
+      <p>A REST-ful API and knowledge base management system that provides persistent memory and storage capabilities for AI agents.</p>
+    </td>
+  </tr>
+</table>
 
-```bash
+## Screenshots
 
-git clone https://github.com/go-skynet/LocalAI
 
-cd LocalAI
+| Talk Interface | Generate Audio |
+| --- | --- |
+| ![Screenshot 2025-03-31 at 12-01-36 LocalAI - Talk](./docs/assets/images/screenshots/screenshot_tts.png) | ![Screenshot 2025-03-31 at 12-01-29 LocalAI - Generate audio with voice-en-us-ryan-low](./docs/assets/images/screenshots/screenshot_tts.png) |
 
-# (optional) Checkout a specific LocalAI tag
-# git checkout -b build <TAG>
+| Models Overview | Generate Images |
+| --- | --- |
+| ![Screenshot 2025-03-31 at 12-01-20 LocalAI - Models](./docs/assets/images/screenshots/screenshot_gallery.png) | ![Screenshot 2025-03-31 at 12-31-41 LocalAI - Generate images with flux 1-dev](./docs/assets/images/screenshots/screenshot_image.png) |
 
-# copy your models to models/
-cp your-model.bin models/
+| Chat Interface | Home |
+| --- | --- |
+| ![Screenshot 2025-03-31 at 11-57-44 LocalAI - Chat with localai-functioncall-qwen2 5-7b-v0 5](./docs/assets/images/screenshots/screenshot_chat.png) | ![Screenshot 2025-03-31 at 11-57-23 LocalAI API - c2a39e3 (c2a39e3639227cfd94ffffe9f5691239acc275a8)](./docs/assets/images/screenshots/screenshot_home.png) |
 
-# (optional) Edit the .env file to set things like context size and threads
-# vim .env
+| Login | Swarm |
+| --- | --- |
+|![Screenshot 2025-03-31 at 12-09-59 ](./docs/assets/images/screenshots/screenshot_login.png) | ![Screenshot 2025-03-31 at 12-10-39 LocalAI - P2P dashboard](./docs/assets/images/screenshots/screenshot_p2p.png) |
 
-# start with docker-compose
-docker-compose up -d --build
+## 💻 Quickstart
 
-# Now API is accessible at localhost:8080
-curl http://localhost:8080/v1/models
-# {"object":"list","data":[{"id":"your-model.bin","object":"model"}]}
-
-curl http://localhost:8080/v1/completions -H "Content-Type: application/json" -d '{
-     "model": "your-model.bin",            
-     "prompt": "A long time ago in a galaxy far, far away",
-     "temperature": 0.7
-   }'
-```
-
-### Example: Use GPT4ALL-J model
-
-<details>
+Run the installer script:
 
 ```bash
-# Clone LocalAI
-git clone https://github.com/go-skynet/LocalAI
-
-cd LocalAI
-
-# (optional) Checkout a specific LocalAI tag
-# git checkout -b build <TAG>
-
-# Download gpt4all-j to models/
-wget https://gpt4all.io/models/ggml-gpt4all-j.bin -O models/ggml-gpt4all-j
-
-# Use a template from the examples
-cp -rf prompt-templates/ggml-gpt4all-j.tmpl models/
-
-# (optional) Edit the .env file to set things like context size and threads
-# vim .env
-
-# start with docker-compose
-docker-compose up -d --build
-
-# Now API is accessible at localhost:8080
-curl http://localhost:8080/v1/models
-# {"object":"list","data":[{"id":"ggml-gpt4all-j","object":"model"}]}
-
-curl http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{
-     "model": "ggml-gpt4all-j",
-     "messages": [{"role": "user", "content": "How are you?"}],
-     "temperature": 0.9 
-   }'
-
-# {"model":"ggml-gpt4all-j","choices":[{"message":{"role":"assistant","content":"I'm doing well, thanks. How about you?"}}]}
-```
-</details>
-
-To build locally, run `make build` (see below).
-
-### Other examples
-
-To see other examples on how to integrate with other projects for instance for question answering or for using it with chatbot-ui, see: [examples](https://github.com/go-skynet/LocalAI/tree/master/examples/).
-
-
-### Advanced configuration
-
-LocalAI can be configured to serve user-defined models with a set of default parameters and templates.
-
-<details>
-
-You can create multiple `yaml` files in the models path or either specify a single YAML configuration file. 
-Consider the following `models` folder in the `example/chatbot-ui`:
-
-```
-base ❯ ls -liah examples/chatbot-ui/models 
-36487587 drwxr-xr-x 2 mudler mudler 4.0K May  3 12:27 .
-36487586 drwxr-xr-x 3 mudler mudler 4.0K May  3 10:42 ..
-36465214 -rw-r--r-- 1 mudler mudler   10 Apr 27 07:46 completion.tmpl
-36464855 -rw-r--r-- 1 mudler mudler 3.6G Apr 27 00:08 ggml-gpt4all-j
-36464537 -rw-r--r-- 1 mudler mudler  245 May  3 10:42 gpt-3.5-turbo.yaml
-36467388 -rw-r--r-- 1 mudler mudler  180 Apr 27 07:46 gpt4all.tmpl
+# Basic installation
+curl https://localai.io/install.sh | sh
 ```
 
-In the `gpt-3.5-turbo.yaml` file it is defined the `gpt-3.5-turbo` model which is an alias to use `gpt4all-j` with pre-defined options.
+For more installation options, see [Installer Options](https://localai.io/docs/advanced/installer/).
 
-For instance, consider the following that declares `gpt-3.5-turbo` backed by the `ggml-gpt4all-j` model:
+### macOS Download:
 
-```yaml
-name: gpt-3.5-turbo
-# Default model parameters
-parameters:
-  # Relative to the models path
-  model: ggml-gpt4all-j
-  # temperature
-  temperature: 0.3
-  # all the OpenAI request options here..
+<a href="https://github.com/mudler/LocalAI/releases/latest/download/LocalAI.dmg">
+  <img src="https://img.shields.io/badge/Download-macOS-blue?style=for-the-badge&logo=apple&logoColor=white" alt="Download LocalAI for macOS"/>
+</a>
 
-# Default context size
-context_size: 512
-threads: 10
-# Define a backend (optional). By default it will try to guess the backend the first time the model is interacted with.
-backend: gptj # available: llama, stablelm, gpt2, gptj rwkv
-# stopwords (if supported by the backend)
-stopwords:
-- "HUMAN:"
-- "### Response:"
-# define chat roles
-roles:
-  user: "HUMAN:"
-  system: "GPT:"
-template:
-  # template file ".tmpl" with the prompt template to use by default on the endpoint call. Note there is no extension in the files
-  completion: completion
-  chat: ggml-gpt4all-j
-```
+Or run with docker:
 
-Specifying a `config-file` via CLI allows to declare models in a single file as a list, for instance:
-
-```yaml
-- name: list1
-  parameters:
-    model: testmodel
-  context_size: 512
-  threads: 10
-  stopwords:
-  - "HUMAN:"
-  - "### Response:"
-  roles:
-    user: "HUMAN:"
-    system: "GPT:"
-  template:
-    completion: completion
-    chat: ggml-gpt4all-j
-- name: list2
-  parameters:
-    model: testmodel
-  context_size: 512
-  threads: 10
-  stopwords:
-  - "HUMAN:"
-  - "### Response:"
-  roles:
-    user: "HUMAN:"
-    system: "GPT:"
-  template:
-    completion: completion
-   chat: ggml-gpt4all-j
-```
-
-See also [chatbot-ui](https://github.com/go-skynet/LocalAI/tree/master/examples/chatbot-ui) as an example on how to use config files.
-
-</details>
-
-### Prompt templates 
-
-The API doesn't inject a default prompt for talking to the model. You have to use a prompt similar to what's described in the standford-alpaca docs: https://github.com/tatsu-lab/stanford_alpaca#data-release.
-
-<details>
-You can use a default template for every model present in your model path, by creating a corresponding file with the `.tmpl` suffix next to your model. For instance, if the model is called `foo.bin`, you can create a sibling file, `foo.bin.tmpl` which will be used as a default prompt and can be used with alpaca:
-
-```
-The below instruction describes a task. Write a response that appropriately completes the request.
-
-### Instruction:
-{{.Input}}
-
-### Response:
-```
-
-See the [prompt-templates](https://github.com/go-skynet/LocalAI/tree/master/prompt-templates) directory in this repository for templates for some of the most popular models.
-
-
-For the edit endpoint, an example template for alpaca-based models can be:
-
-```yaml
-Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.
-
-### Instruction:
-{{.Instruction}}
-
-### Input:
-{{.Input}}
-
-### Response:
-```
-
-</details>
-
-### CLI
-
-You can control LocalAI with command line arguments, to specify a binding address, or the number of threads.
-
-<details>
-
-Usage:
-
-```
-local-ai --models-path <model_path> [--address <address>] [--threads <num_threads>]
-```
-
-| Parameter    | Environment Variable | Default Value | Description                            |
-| ------------ | -------------------- | ------------- | -------------------------------------- |
-| models-path        | MODELS_PATH           |               | The path where you have models (ending with `.bin`).      |
-| threads      | THREADS              | Number of Physical cores     | The number of threads to use for text generation. |
-| address      | ADDRESS              | :8080         | The address and port to listen on. |
-| context-size | CONTEXT_SIZE         | 512           | Default token context size. |
-| debug | DEBUG         | false           | Enable debug mode. |
-| config-file | CONFIG_FILE         | empty           | Path to a LocalAI config file. |
-
-</details>
-
-## Setup
-
-Currently LocalAI comes as a container image and can be used with docker or a container engine of choice. You can check out all the available images with corresponding tags [here](https://quay.io/repository/go-skynet/local-ai?tab=tags&tag=latest).
-
-### Docker
-
-<details>
-Example of starting the API with `docker`:
+### CPU only image:
 
 ```bash
-docker run -p 8080:8080 -ti --rm quay.io/go-skynet/local-ai:latest --models-path /path/to/models --context-size 700 --threads 4
+docker run -ti --name local-ai -p 8080:8080 localai/localai:latest
 ```
 
-You should see:
-```
-┌───────────────────────────────────────────────────┐ 
-│                   Fiber v2.42.0                   │ 
-│               http://127.0.0.1:8080               │ 
-│       (bound on host 0.0.0.0 and port 8080)       │ 
-│                                                   │ 
-│ Handlers ............. 1  Processes ........... 1 │ 
-│ Prefork ....... Disabled  PID ................. 1 │ 
-└───────────────────────────────────────────────────┘ 
-```
+### NVIDIA GPU Images:
 
-</details>
-
-### Build locally
-
-<details>
-
-In order to build the `LocalAI` container image locally you can use `docker`:
-
-```
-# build the image
-docker build -t LocalAI .
-docker run LocalAI
-```
-
-Or you can build the binary with `make`:
-
-```
-make build
-```
-
-</details>
-
-### Build on mac
-
-Building on Mac (M1 or M2) works, but you may need to install some prerequisites using `brew`. 
-
-<details>
-
-The below has been tested by one mac user and found to work. Note that this doesn't use docker to run the server:
-
-```
-# install build dependencies
-brew install cmake
-brew install go
-
-# clone the repo
-git clone https://github.com/go-skynet/LocalAI.git
-
-cd LocalAI
-
-# build the binary
-make build
-
-# Download gpt4all-j to models/
-wget https://gpt4all.io/models/ggml-gpt4all-j.bin -O models/ggml-gpt4all-j
-
-# Use a template from the examples
-cp -rf prompt-templates/ggml-gpt4all-j.tmpl models/
-
-# Run LocalAI
-./local-ai --models-path ./models/ --debug
-
-# Now API is accessible at localhost:8080
-curl http://localhost:8080/v1/models
-
-curl http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{
-     "model": "ggml-gpt4all-j",
-     "messages": [{"role": "user", "content": "How are you?"}],
-     "temperature": 0.9 
-   }'
-```
-
-</details>
-
-### Windows compatibility
-
-It should work, however you need to make sure you give enough resources to the container. See https://github.com/go-skynet/LocalAI/issues/2
-
-### Run LocalAI in Kubernetes
-
-LocalAI can be installed inside Kubernetes with helm.
-
-<details>
-
-1. Add the helm repo
-    ```bash
-    helm repo add go-skynet https://go-skynet.github.io/helm-charts/
-    ```
-1. Create a values files with your settings:
 ```bash
-cat <<EOF > values.yaml
-deployment:
-  image: quay.io/go-skynet/local-ai:latest
-  env:
-    threads: 4
-    contextSize: 1024
-    modelsPath: "/models"
-# Optionally create a PVC, mount the PV to the LocalAI Deployment,
-# and download a model to prepopulate the models directory
-modelsVolume:
-  enabled: true
-  url: "https://gpt4all.io/models/ggml-gpt4all-j.bin"
-  pvc:
-    size: 6Gi
-    accessModes:
-    - ReadWriteOnce
-  auth:
-    # Optional value for HTTP basic access authentication header
-    basic: "" # 'username:password' base64 encoded
-service:
-  type: ClusterIP
-  annotations: {}
-  # If using an AWS load balancer, you'll need to override the default 60s load balancer idle timeout
-  # service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "1200"
-EOF
+# CUDA 12.0
+docker run -ti --name local-ai -p 8080:8080 --gpus all localai/localai:latest-gpu-nvidia-cuda-12
+
+# CUDA 11.7
+docker run -ti --name local-ai -p 8080:8080 --gpus all localai/localai:latest-gpu-nvidia-cuda-11
+
+# NVIDIA Jetson (L4T) ARM64
+docker run -ti --name local-ai -p 8080:8080 --gpus all localai/localai:latest-nvidia-l4t-arm64
 ```
-3. Install the helm chart:
+
+### AMD GPU Images (ROCm):
+
 ```bash
-helm repo update
-helm install local-ai go-skynet/local-ai -f values.yaml
+docker run -ti --name local-ai -p 8080:8080 --device=/dev/kfd --device=/dev/dri --group-add=video localai/localai:latest-gpu-hipblas
 ```
 
-Check out also the [helm chart repository on GitHub](https://github.com/go-skynet/helm-charts).
+### Intel GPU Images (oneAPI):
 
-</details>
-
-## Supported OpenAI API endpoints
-
-You can check out the [OpenAI API reference](https://platform.openai.com/docs/api-reference/chat/create). 
-
-Following the list of endpoints/parameters supported. 
-
-Note:
-
-- You can also specify the model as part of the OpenAI token.
-- If only one model is available, the API will use it for all the requests.
-
-### Chat completions
-
-<details>
-For example, to generate a chat completion, you can send a POST request to the `/v1/chat/completions` endpoint with the instruction as the request body:
-
-```
-curl http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{
-     "model": "ggml-koala-7b-model-q4_0-r2.bin",
-     "messages": [{"role": "user", "content": "Say this is a test!"}],
-     "temperature": 0.7
-   }'
+```bash
+docker run -ti --name local-ai -p 8080:8080 --device=/dev/dri/card1 --device=/dev/dri/renderD128 localai/localai:latest-gpu-intel
 ```
 
-Available additional parameters: `top_p`, `top_k`, `max_tokens`
-</details>
+### Vulkan GPU Images:
 
-### Edit completions
-
-<details>
-To generate an edit completion you can send a POST request to the `/v1/edits` endpoint with the instruction as the request body:
-
-```
-curl http://localhost:8080/v1/edits -H "Content-Type: application/json" -d '{
-     "model": "ggml-koala-7b-model-q4_0-r2.bin",
-     "instruction": "rephrase",
-     "input": "Black cat jumped out of the window",
-     "temperature": 0.7
-   }'
+```bash
+docker run -ti --name local-ai -p 8080:8080 localai/localai:latest-gpu-vulkan
 ```
 
-Available additional parameters: `top_p`, `top_k`, `max_tokens`.
+### AIO Images (pre-downloaded models):
 
-</details>
+```bash
+# CPU version
+docker run -ti --name local-ai -p 8080:8080 localai/localai:latest-aio-cpu
 
-### Completions
+# NVIDIA CUDA 12 version
+docker run -ti --name local-ai -p 8080:8080 --gpus all localai/localai:latest-aio-gpu-nvidia-cuda-12
 
-<details>
+# NVIDIA CUDA 11 version
+docker run -ti --name local-ai -p 8080:8080 --gpus all localai/localai:latest-aio-gpu-nvidia-cuda-11
 
-To generate a completion, you can send a POST request to the `/v1/completions` endpoint with the instruction as per the request body:
+# Intel GPU version
+docker run -ti --name local-ai -p 8080:8080 localai/localai:latest-aio-gpu-intel
 
-```
-curl http://localhost:8080/v1/completions -H "Content-Type: application/json" -d '{
-     "model": "ggml-koala-7b-model-q4_0-r2.bin",
-     "prompt": "A long time ago in a galaxy far, far away",
-     "temperature": 0.7
-   }'
-```
-
-Available additional parameters: `top_p`, `top_k`, `max_tokens`
-
-</details>
-
-### List models
-
-<details>
-You can list all the models available with:
-
-```
-curl http://localhost:8080/v1/models
+# AMD GPU version
+docker run -ti --name local-ai -p 8080:8080 --device=/dev/kfd --device=/dev/dri --group-add=video localai/localai:latest-aio-gpu-hipblas
 ```
 
-</details>
+For more information about the AIO images and pre-downloaded models, see [Container Documentation](https://localai.io/basics/container/).
 
-## Frequently asked questions
+To load models:
 
-Here are answers to some of the most common questions.
+```bash
+# From the model gallery (see available models with `local-ai models list`, in the WebUI from the model tab, or visiting https://models.localai.io)
+local-ai run llama-3.2-1b-instruct:q4_k_m
+# Start LocalAI with the phi-2 model directly from huggingface
+local-ai run huggingface://TheBloke/phi-2-GGUF/phi-2.Q8_0.gguf
+# Install and run a model from the Ollama OCI registry
+local-ai run ollama://gemma:2b
+# Run a model from a configuration file
+local-ai run https://gist.githubusercontent.com/.../phi-2.yaml
+# Install and run a model from a standard OCI registry (e.g., Docker Hub)
+local-ai run oci://localai/phi-2:latest
+```
 
+> ⚡ **Automatic Backend Detection**: When you install models from the gallery or YAML files, LocalAI automatically detects your system's GPU capabilities (NVIDIA, AMD, Intel) and downloads the appropriate backend. For advanced configuration options, see [GPU Acceleration](https://localai.io/features/gpu-acceleration/#automatic-backend-detection).
 
-### How do I get models? 
+For more information, see [💻 Getting started](https://localai.io/basics/getting_started/index.html)
 
-<details>
+## 📰 Latest project news
 
-Most ggml-based models should work, but newer models may require additions to the API. If a model doesn't work, please feel free to open up issues. However, be cautious about downloading models from the internet and directly onto your machine, as there may be security vulnerabilities in lama.cpp or ggml that could be maliciously exploited. Some models can be found on Hugging Face: https://huggingface.co/models?search=ggml, or models from gpt4all should also work: https://github.com/nomic-ai/gpt4all.
+- August 2025: MLX, MLX-VLM, Diffusers and llama.cpp are now supported on Mac M1/M2/M3+ chips ( with `development` suffix in the gallery ): https://github.com/mudler/LocalAI/pull/6049 https://github.com/mudler/LocalAI/pull/6119 https://github.com/mudler/LocalAI/pull/6121 https://github.com/mudler/LocalAI/pull/6060
+- July/August 2025: 🔍 [Object Detection](https://localai.io/features/object-detection/) added to the API featuring [rf-detr](https://github.com/roboflow/rf-detr)
+- July 2025: All backends migrated outside of the main binary. LocalAI is now more lightweight, small, and automatically downloads the required backend to run the model. [Read the release notes](https://github.com/mudler/LocalAI/releases/tag/v3.2.0)
+- June 2025: [Backend management](https://github.com/mudler/LocalAI/pull/5607) has been added. Attention: extras images are going to be deprecated from the next release! Read [the backend management PR](https://github.com/mudler/LocalAI/pull/5607).
+- May 2025: [Audio input](https://github.com/mudler/LocalAI/pull/5466) and [Reranking](https://github.com/mudler/LocalAI/pull/5396) in llama.cpp backend, [Realtime API](https://github.com/mudler/LocalAI/pull/5392),  Support to Gemma, SmollVLM, and more multimodal models (available in the gallery).
+- May 2025: Important: image name changes [See release](https://github.com/mudler/LocalAI/releases/tag/v2.29.0)
+- Apr 2025: Rebrand, WebUI enhancements
+- Apr 2025: [LocalAGI](https://github.com/mudler/LocalAGI) and [LocalRecall](https://github.com/mudler/LocalRecall) join the LocalAI family stack.
+- Apr 2025: WebUI overhaul, AIO images updates
+- Feb 2025: Backend cleanup, Breaking changes, new backends (kokoro, OutelTTS, faster-whisper), Nvidia L4T images
+- Jan 2025: LocalAI model release: https://huggingface.co/mudler/LocalAI-functioncall-phi-4-v0.3, SANA support in diffusers: https://github.com/mudler/LocalAI/pull/4603
+- Dec 2024: stablediffusion.cpp backend (ggml) added ( https://github.com/mudler/LocalAI/pull/4289 )
+- Nov 2024: Bark.cpp backend added ( https://github.com/mudler/LocalAI/pull/4287 )
+- Nov 2024: Voice activity detection models (**VAD**) added to the API: https://github.com/mudler/LocalAI/pull/4204
+- Oct 2024: examples moved to [LocalAI-examples](https://github.com/mudler/LocalAI-examples)
+- Aug 2024:  🆕 FLUX-1, [P2P Explorer](https://explorer.localai.io)
+- July 2024: 🔥🔥 🆕 P2P Dashboard, LocalAI Federated mode and AI Swarms: https://github.com/mudler/LocalAI/pull/2723. P2P Global community pools: https://github.com/mudler/LocalAI/issues/3113
+- May 2024: 🔥🔥 Decentralized P2P llama.cpp:  https://github.com/mudler/LocalAI/pull/2343 (peer2peer llama.cpp!) 👉 Docs  https://localai.io/features/distribute/
+- May 2024: 🔥🔥 Distributed inferencing: https://github.com/mudler/LocalAI/pull/2324
+- April 2024: Reranker API: https://github.com/mudler/LocalAI/pull/2121
 
-</details>
+Roadmap items: [List of issues](https://github.com/mudler/LocalAI/issues?q=is%3Aissue+is%3Aopen+label%3Aroadmap)
 
-### What's the difference with Serge, or XXX?
+## 🚀 [Features](https://localai.io/features/)
 
+- 🧩 [Backend Gallery](https://localai.io/backends/): Install/remove backends on the fly, powered by OCI images — fully customizable and API-driven.
+- 📖 [Text generation with GPTs](https://localai.io/features/text-generation/) (`llama.cpp`, `transformers`, `vllm` ... [:book: and more](https://localai.io/model-compatibility/index.html#model-compatibility-table))
+- 🗣 [Text to Audio](https://localai.io/features/text-to-audio/)
+- 🔈 [Audio to Text](https://localai.io/features/audio-to-text/) (Audio transcription with `whisper.cpp`)
+- 🎨 [Image generation](https://localai.io/features/image-generation)
+- 🔥 [OpenAI-alike tools API](https://localai.io/features/openai-functions/) 
+- 🧠 [Embeddings generation for vector databases](https://localai.io/features/embeddings/)
+- ✍️ [Constrained grammars](https://localai.io/features/constrained_grammars/)
+- 🖼️ [Download Models directly from Huggingface ](https://localai.io/models/)
+- 🥽 [Vision API](https://localai.io/features/gpt-vision/)
+- 🔍 [Object Detection](https://localai.io/features/object-detection/)
+- 📈 [Reranker API](https://localai.io/features/reranker/)
+- 🆕🖧 [P2P Inferencing](https://localai.io/features/distribute/)
+- [Agentic capabilities](https://github.com/mudler/LocalAGI)
+- 🔊 Voice activity detection (Silero-VAD support)
+- 🌍 Integrated WebUI!
 
-<details>
+## 🧩 Supported Backends & Acceleration
 
-LocalAI is a multi-model solution that doesn't focus on a specific model type (e.g., llama.cpp or alpaca.cpp), and it handles all of these internally for faster inference,  easy to set up locally and deploy to Kubernetes.
+LocalAI supports a comprehensive range of AI backends with multiple acceleration options:
 
-</details>
+### Text Generation & Language Models
+| Backend | Description | Acceleration Support |
+|---------|-------------|---------------------|
+| **llama.cpp** | LLM inference in C/C++ | CUDA 11/12, ROCm, Intel SYCL, Vulkan, Metal, CPU |
+| **vLLM** | Fast LLM inference with PagedAttention | CUDA 12, ROCm, Intel |
+| **transformers** | HuggingFace transformers framework | CUDA 11/12, ROCm, Intel, CPU |
+| **exllama2** | GPTQ inference library | CUDA 12 |
+| **MLX** | Apple Silicon LLM inference | Metal (M1/M2/M3+) |
+| **MLX-VLM** | Apple Silicon Vision-Language Models | Metal (M1/M2/M3+) |
 
+### Audio & Speech Processing
+| Backend | Description | Acceleration Support |
+|---------|-------------|---------------------|
+| **whisper.cpp** | OpenAI Whisper in C/C++ | CUDA 12, ROCm, Intel SYCL, Vulkan, CPU |
+| **faster-whisper** | Fast Whisper with CTranslate2 | CUDA 12, ROCm, Intel, CPU |
+| **bark** | Text-to-audio generation | CUDA 12, ROCm, Intel |
+| **bark-cpp** | C++ implementation of Bark | CUDA, Metal, CPU |
+| **coqui** | Advanced TTS with 1100+ languages | CUDA 12, ROCm, Intel, CPU |
+| **kokoro** | Lightweight TTS model | CUDA 12, ROCm, Intel, CPU |
+| **chatterbox** | Production-grade TTS | CUDA 11/12, CPU |
+| **piper** | Fast neural TTS system | CPU |
+| **kitten-tts** | Kitten TTS models | CPU |
+| **silero-vad** | Voice Activity Detection | CPU |
 
-### Can I use it with a Discord bot, or XXX?
+### Image & Video Generation
+| Backend | Description | Acceleration Support |
+|---------|-------------|---------------------|
+| **stablediffusion.cpp** | Stable Diffusion in C/C++ | CUDA 12, Intel SYCL, Vulkan, CPU |
+| **diffusers** | HuggingFace diffusion models | CUDA 11/12, ROCm, Intel, Metal, CPU |
 
-<details>
+### Specialized AI Tasks
+| Backend | Description | Acceleration Support |
+|---------|-------------|---------------------|
+| **rfdetr** | Real-time object detection | CUDA 12, Intel, CPU |
+| **rerankers** | Document reranking API | CUDA 11/12, ROCm, Intel, CPU |
+| **local-store** | Vector database | CPU |
+| **huggingface** | HuggingFace API integration | API-based |
 
-Yes! If the client uses OpenAI and supports setting a different base URL to send requests to, you can use the LocalAI endpoint. This allows to use this with every application that was supposed to work with OpenAI, but without changing the application!
+### Hardware Acceleration Matrix
 
-</details>
+| Acceleration Type | Supported Backends | Hardware Support |
+|-------------------|-------------------|------------------|
+| **NVIDIA CUDA 11** | llama.cpp, whisper, stablediffusion, diffusers, rerankers, bark, chatterbox | Nvidia hardware |
+| **NVIDIA CUDA 12** | All CUDA-compatible backends | Nvidia hardware |
+| **AMD ROCm** | llama.cpp, whisper, vllm, transformers, diffusers, rerankers, coqui, kokoro, bark | AMD Graphics |
+| **Intel oneAPI** | llama.cpp, whisper, stablediffusion, vllm, transformers, diffusers, rfdetr, rerankers, exllama2, coqui, kokoro, bark | Intel Arc, Intel iGPUs |
+| **Apple Metal** | llama.cpp, whisper, diffusers, MLX, MLX-VLM, bark-cpp | Apple M1/M2/M3+ |
+| **Vulkan** | llama.cpp, whisper, stablediffusion | Cross-platform GPUs |
+| **NVIDIA Jetson** | llama.cpp, whisper, stablediffusion, diffusers, rfdetr | ARM64 embedded AI |
+| **CPU Optimized** | All backends | AVX/AVX2/AVX512, quantization support |
 
+### 🔗 Community and integrations
 
-### Can this leverage GPUs? 
+Build and deploy custom containers:
+- https://github.com/sozercan/aikit
 
-<details>
+WebUIs:
+- https://github.com/Jirubizu/localai-admin
+- https://github.com/go-skynet/LocalAI-frontend
+- QA-Pilot(An interactive chat project that leverages LocalAI LLMs for rapid understanding and navigation of GitHub code repository) https://github.com/reid41/QA-Pilot
 
-Not currently, as ggml doesn't support GPUs yet: https://github.com/ggerganov/llama.cpp/discussions/915.
+Model galleries
+- https://github.com/go-skynet/model-gallery
 
-</details>
+Voice:
+- https://github.com/richiejp/VoxInput
 
-### Where is the webUI? 
+Other:
+- Helm chart https://github.com/go-skynet/helm-charts
+- VSCode extension https://github.com/badgooooor/localai-vscode-plugin
+- Langchain: https://python.langchain.com/docs/integrations/providers/localai/
+- Terminal utility https://github.com/djcopley/ShellOracle
+- Local Smart assistant https://github.com/mudler/LocalAGI
+- Home Assistant https://github.com/sammcj/homeassistant-localai / https://github.com/drndos/hass-openai-custom-conversation / https://github.com/valentinfrlch/ha-gpt4vision
+- Discord bot https://github.com/mudler/LocalAGI/tree/main/examples/discord
+- Slack bot https://github.com/mudler/LocalAGI/tree/main/examples/slack
+- Shell-Pilot(Interact with LLM using LocalAI models via pure shell scripts on your Linux or MacOS system) https://github.com/reid41/shell-pilot
+- Telegram bot https://github.com/mudler/LocalAI/tree/master/examples/telegram-bot
+- Another Telegram Bot https://github.com/JackBekket/Hellper
+- Auto-documentation https://github.com/JackBekket/Reflexia
+- Github bot which answer on issues, with code and documentation as context https://github.com/JackBekket/GitHelper
+- Github Actions: https://github.com/marketplace/actions/start-localai
+- Examples: https://github.com/mudler/LocalAI/tree/master/examples/
+  
 
-<details> 
-There is the availability of localai-webui and chatbot-ui in the examples section and can be setup as per the instructions. However as LocalAI is an API you can already plug it into existing projects that provides are UI interfaces to OpenAI's APIs. There are several already on github, and should be compatible with LocalAI already (as it mimics the OpenAI API)
+### 🔗 Resources
 
-</details>
+- [LLM finetuning guide](https://localai.io/docs/advanced/fine-tuning/)
+- [How to build locally](https://localai.io/basics/build/index.html)
+- [How to install in Kubernetes](https://localai.io/basics/getting_started/index.html#run-localai-in-kubernetes)
+- [Projects integrating LocalAI](https://localai.io/docs/integrations/)
+- [How tos section](https://io.midori-ai.xyz/howtos/) (curated by our community)
 
-### Does it work with AutoGPT? 
+## :book: 🎥 [Media, Blogs, Social](https://localai.io/basics/news/#media-blogs-social)
 
-<details>
+- [Run Visual studio code with LocalAI (SUSE)](https://www.suse.com/c/running-ai-locally/)
+- 🆕 [Run LocalAI on Jetson Nano Devkit](https://mudler.pm/posts/local-ai-jetson-nano-devkit/)
+- [Run LocalAI on AWS EKS with Pulumi](https://www.pulumi.com/blog/low-code-llm-apps-with-local-ai-flowise-and-pulumi/)
+- [Run LocalAI on AWS](https://staleks.hashnode.dev/installing-localai-on-aws-ec2-instance)
+- [Create a slackbot for teams and OSS projects that answer to documentation](https://mudler.pm/posts/smart-slackbot-for-teams/)
+- [LocalAI meets k8sgpt](https://www.youtube.com/watch?v=PKrDNuJ_dfE)
+- [Question Answering on Documents locally with LangChain, LocalAI, Chroma, and GPT4All](https://mudler.pm/posts/localai-question-answering/)
+- [Tutorial to use k8sgpt with LocalAI](https://medium.com/@tyler_97636/k8sgpt-localai-unlock-kubernetes-superpowers-for-free-584790de9b65)
 
-AutoGPT currently doesn't allow to set a different API URL, but there is a PR open for it, so this should be possible soon!
+## Citation
 
-</details>
+If you utilize this repository, data in a downstream project, please consider citing it with:
 
-## Projects already using LocalAI to run local models
+```
+@misc{localai,
+  author = {Ettore Di Giacinto},
+  title = {LocalAI: The free, Open source OpenAI alternative},
+  year = {2023},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/go-skynet/LocalAI}},
+```
 
-Feel free to open up a PR to get your project listed!
+## ❤️ Sponsors
 
-- [Kairos](https://github.com/kairos-io/kairos)
-- [k8sgpt](https://github.com/k8sgpt-ai/k8sgpt#running-local-models)
+> Do you find LocalAI useful?
 
-## Blog posts and other articles
+Support the project by becoming [a backer or sponsor](https://github.com/sponsors/mudler). Your logo will show up here with a link to your website.
 
-- https://medium.com/@tyler_97636/k8sgpt-localai-unlock-kubernetes-superpowers-for-free-584790de9b65
-- https://kairos.io/docs/examples/localai/
+A huge thank you to our generous sponsors who support this project covering CI expenses, and our [Sponsor list](https://github.com/sponsors/mudler):
 
-## Short-term roadmap
+<p align="center">
+  <a href="https://www.spectrocloud.com/" target="blank">
+    <img height="200" src="https://github.com/user-attachments/assets/72eab1dd-8b93-4fc0-9ade-84db49f24962">
+  </a>
+  <a href="https://www.premai.io/" target="blank">
+    <img height="200" src="https://github.com/mudler/LocalAI/assets/2420543/42e4ca83-661e-4f79-8e46-ae43689683d6"> <br>
+  </a>
+</p>
 
-- [x] Mimic OpenAI API (https://github.com/go-skynet/LocalAI/issues/10)
-- [ ] Binary releases (https://github.com/go-skynet/LocalAI/issues/6)
-- [ ] Upstream our golang bindings to llama.cpp (https://github.com/ggerganov/llama.cpp/issues/351) and [gpt4all](https://github.com/go-skynet/LocalAI/issues/85)
-- [x] Multi-model support
-- [x] Have a webUI!
-- [x] Allow configuration of defaults for models.
-- [ ] Enable automatic downloading of models from a curated gallery, with only free-licensed models, directly from the webui.
-
-## Star history
+## 🌟 Star history
 
 [![LocalAI Star history Chart](https://api.star-history.com/svg?repos=go-skynet/LocalAI&type=Date)](https://star-history.com/#go-skynet/LocalAI&Date)
 
-## License
+## 📖 License
 
-LocalAI is a community-driven project. It was initially created by [Ettore Di Giacinto](https://github.com/mudler/) at the [SpectroCloud OSS Office](https://github.com/spectrocloud).
+LocalAI is a community-driven project created by [Ettore Di Giacinto](https://github.com/mudler/).
 
-MIT
+MIT - Author Ettore Di Giacinto <mudler@localai.io>
 
-## Golang bindings used
+## 🙇 Acknowledgements
 
-- [go-skynet/go-llama.cpp](https://github.com/go-skynet/go-llama.cpp)
-- [go-skynet/go-gpt4all-j.cpp](https://github.com/go-skynet/go-gpt4all-j.cpp)
-- [go-skynet/go-gpt2.cpp](https://github.com/go-skynet/go-gpt2.cpp)
-- [donomii/go-rwkv.cpp](https://github.com/donomii/go-rwkv.cpp)
-
-## Acknowledgements
+LocalAI couldn't have been built without the help of great software already available from the community. Thank you!
 
 - [llama.cpp](https://github.com/ggerganov/llama.cpp)
 - https://github.com/tatsu-lab/stanford_alpaca
 - https://github.com/cornelk/llama-go for the initial ideas
-- https://github.com/antimatter15/alpaca.cpp for the light model version (this is compatible and tested only with that checkpoint model!)
+- https://github.com/antimatter15/alpaca.cpp
+- https://github.com/EdVince/Stable-Diffusion-NCNN
+- https://github.com/ggerganov/whisper.cpp
+- https://github.com/rhasspy/piper
 
-## Contributors
+## 🤗 Contributors
 
+This is a community project, a special thanks to our contributors! 🤗
 <a href="https://github.com/go-skynet/LocalAI/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=go-skynet/LocalAI" />
 </a>
