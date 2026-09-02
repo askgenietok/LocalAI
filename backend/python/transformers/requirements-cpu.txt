@@ -5,5 +5,5 @@ accelerate
 transformers
 bitsandbytes
 outetts
-sentence-transformers==5.1.0
+sentence-transformers==6.0.0
 protobuf==6.32.0
